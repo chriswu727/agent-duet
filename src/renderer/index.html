@@ -19,7 +19,10 @@
           <div class="wordmark"><span class="mark">D</span> Duet</div>
           <p>Codex builds. Claude challenges. Your subscriptions stay local.</p>
         </div>
-        <button class="quiet-button" id="refresh-health" type="button">Recheck CLIs</button>
+        <div class="masthead-actions">
+          <button class="quiet-button" id="open-settings" type="button">Settings</button>
+          <button class="quiet-button" id="refresh-health" type="button">Recheck CLIs</button>
+        </div>
       </header>
 
       <section class="health-grid" aria-label="CLI subscription status">
@@ -153,6 +156,10 @@
           <details class="logs">
             <summary>CLI diagnostics</summary>
             <pre id="log-output">No diagnostics yet.</pre>
+            <div class="log-actions">
+              <button class="quiet-button" id="copy-diagnostics" type="button">Copy diagnostics</button>
+              <span id="copy-status" role="status"></span>
+            </div>
           </details>
         </aside>
       </section>
@@ -175,6 +182,80 @@
         <span>Only Codex can write files.</span>
       </footer>
     </main>
+
+    <dialog class="modal onboarding-modal" id="onboarding-dialog" aria-labelledby="onboarding-title" closedby="none">
+      <div class="modal-content">
+        <span class="eyebrow">Welcome to Duet</span>
+        <h2 id="onboarding-title">Two local agents, one controlled loop.</h2>
+        <p class="modal-intro">Duet uses the official CLI logins already on this computer. It does not ask for API keys and does not call either model until you start a run.</p>
+        <ol class="onboarding-steps">
+          <li><strong>Sign in twice</strong><span>Codex with ChatGPT and Claude Code with Claude.ai.</span></li>
+          <li><strong>Choose a clean Git repo</strong><span>Existing changes are never mixed into an agent run.</span></li>
+          <li><strong>Set finite stops</strong><span>Rounds and time bound the collaboration, not your subscription capacity.</span></li>
+          <li><strong>Inspect before Apply</strong><span>Agent edits stay isolated until you review the diff and choose Apply.</span></li>
+        </ol>
+        <div class="modal-actions">
+          <p id="onboarding-status" role="status"></p>
+          <button class="primary-button" id="finish-onboarding" type="button">Set up my first run <span>→</span></button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal" id="settings-dialog" aria-labelledby="settings-title">
+      <form class="modal-content" id="settings-form">
+        <div class="modal-header">
+          <div>
+            <span class="eyebrow">Preferences</span>
+            <h2 id="settings-title">Run defaults</h2>
+          </div>
+          <button class="dialog-close" id="close-settings" type="button" aria-label="Close settings">×</button>
+        </div>
+        <p class="modal-intro">Duet saves only these defaults. Tasks and repository paths are not remembered here.</p>
+        <div class="dialog-settings-grid">
+          <label for="settings-max-rounds">Review rounds
+            <select id="settings-max-rounds" name="maxRounds">
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+              <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+            </select>
+          </label>
+          <label for="settings-max-minutes">Time ceiling
+            <select id="settings-max-minutes" name="maxMinutes">
+              <option value="10">10 min</option><option value="30">30 min</option><option value="60">60 min</option>
+              <option value="90">90 min</option><option value="120">120 min</option>
+            </select>
+          </label>
+          <label for="settings-review-model">Claude reviewer
+            <select id="settings-review-model" name="reviewModel">
+              <option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option>
+            </select>
+          </label>
+        </div>
+        <label class="dialog-field" for="settings-verification-command">Default verification command <span class="optional">optional</span>
+          <input id="settings-verification-command" name="verificationCommand" placeholder="pnpm test" spellcheck="false">
+        </label>
+        <div class="modal-actions">
+          <button class="quiet-button" id="reset-settings" type="button">Reset defaults</button>
+          <p id="settings-status" role="status"></p>
+          <button class="primary-button" type="submit">Save defaults</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal diff-modal" id="diff-dialog" aria-labelledby="diff-title">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <span class="eyebrow">Isolated workspace</span>
+            <h2 id="diff-title">Change preview</h2>
+          </div>
+          <button class="dialog-close" id="close-diff" type="button" aria-label="Close change preview">×</button>
+        </div>
+        <pre class="diff-stat" id="diff-stat"></pre>
+        <ul class="diff-files" id="diff-files"></ul>
+        <p class="diff-note" id="diff-note" role="status"></p>
+        <pre class="diff-patch" id="diff-patch" tabindex="0"></pre>
+      </div>
+    </dialog>
     <script src="./app.js" defer></script>
   </body>
 </html>

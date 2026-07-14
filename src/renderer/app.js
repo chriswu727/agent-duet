@@ -7,35 +7,59 @@ const elements = {
   codexCard: document.querySelector("#codex-card"),
   codexDetail: document.querySelector("#codex-detail"),
   codexPill: document.querySelector("#codex-pill"),
+  copyDiagnostics: document.querySelector("#copy-diagnostics"),
+  copyStatus: document.querySelector("#copy-status"),
+  diffDialog: document.querySelector("#diff-dialog"),
+  diffFiles: document.querySelector("#diff-files"),
+  diffNote: document.querySelector("#diff-note"),
+  diffPatch: document.querySelector("#diff-patch"),
+  diffStat: document.querySelector("#diff-stat"),
   fileMetric: document.querySelector("#file-metric"),
   form: document.querySelector("#run-form"),
   formMessage: document.querySelector("#form-message"),
   historyList: document.querySelector("#history-list"),
   historyStatus: document.querySelector("#history-status"),
   log: document.querySelector("#log-output"),
+  maxMinutes: document.querySelector("#max-minutes"),
+  maxRounds: document.querySelector("#max-rounds"),
+  onboardingDialog: document.querySelector("#onboarding-dialog"),
+  onboardingStatus: document.querySelector("#onboarding-status"),
+  openSettings: document.querySelector("#open-settings"),
   projectPath: document.querySelector("#project-path"),
   refreshHealth: document.querySelector("#refresh-health"),
   roundMetric: document.querySelector("#round-metric"),
   runState: document.querySelector("#run-state"),
   runTitle: document.querySelector("#run-title"),
+  reviewModel: document.querySelector("#review-model"),
+  settingsDialog: document.querySelector("#settings-dialog"),
+  settingsForm: document.querySelector("#settings-form"),
+  settingsMaxMinutes: document.querySelector("#settings-max-minutes"),
+  settingsMaxRounds: document.querySelector("#settings-max-rounds"),
+  settingsReviewModel: document.querySelector("#settings-review-model"),
+  settingsStatus: document.querySelector("#settings-status"),
+  settingsVerification: document.querySelector("#settings-verification-command"),
   start: document.querySelector("#start-run"),
   task: document.querySelector("#task"),
   taskCount: document.querySelector("#task-count"),
   timeline: document.querySelector("#timeline"),
   tokenMetric: document.querySelector("#token-metric"),
+  verificationCommand: document.querySelector("#verification-command"),
   workspaceList: document.querySelector("#workspace-queue"),
   workspacePanel: document.querySelector("#workspace-queue-panel"),
   workspaceStatus: document.querySelector("#workspace-status")
 };
 
 let running = false;
+let settings;
 
 function setRunning(value) {
   running = value;
   elements.start.disabled = value;
   elements.chooseProject.disabled = value;
   elements.refreshHealth.disabled = value;
+  elements.openSettings.disabled = value;
   elements.cancel.classList.toggle("hidden", !value);
+  elements.form.setAttribute("aria-busy", String(value));
   document.querySelectorAll("[data-workspace-action]").forEach((button) => {
     button.disabled = value;
   });
@@ -103,6 +127,9 @@ function renderWorkspaces(workspaces) {
 
     const actions = document.createElement("div");
     actions.className = "workspace-item-actions";
+    if (workspace.canPreview) {
+      actions.append(workspaceButton("Inspect diff", "diff", workspace.id));
+    }
     if (workspace.canApply) {
       actions.append(
         workspaceButton("Apply changes", "apply", workspace.id, "apply"),
@@ -129,6 +156,62 @@ async function refreshWorkspaces() {
   } catch (error) {
     elements.workspacePanel.classList.remove("hidden");
     elements.workspaceStatus.textContent = error.message;
+  }
+}
+
+function applySettings(value) {
+  settings = value;
+  elements.maxMinutes.value = String(value.maxMinutes);
+  elements.maxRounds.value = String(value.maxRounds);
+  elements.reviewModel.value = value.reviewModel;
+  elements.verificationCommand.value = value.verificationCommand;
+  elements.settingsMaxMinutes.value = String(value.maxMinutes);
+  elements.settingsMaxRounds.value = String(value.maxRounds);
+  elements.settingsReviewModel.value = value.reviewModel;
+  elements.settingsVerification.value = value.verificationCommand;
+}
+
+async function refreshSettings() {
+  try {
+    const result = await window.duet.settings();
+    applySettings(result.settings);
+    if (result.warning) elements.settingsStatus.textContent = result.warning;
+    if (!result.settings.onboardingComplete && !elements.onboardingDialog.open) {
+      elements.onboardingDialog.showModal();
+    }
+  } catch (error) {
+    elements.formMessage.textContent = `Could not load settings: ${error.message}`;
+  }
+}
+
+async function showWorkspaceDiff(id) {
+  elements.diffFiles.replaceChildren();
+  elements.diffStat.textContent = "Loading isolated diff…";
+  elements.diffPatch.textContent = "";
+  elements.diffNote.textContent = "";
+  elements.diffDialog.showModal();
+  document.querySelectorAll("[data-workspace-action]").forEach((button) => {
+    button.disabled = true;
+  });
+  try {
+    const preview = await window.duet.workspaceDiff(id);
+    elements.diffStat.textContent = preview.stat;
+    for (const path of preview.changedFiles) {
+      const file = document.createElement("li");
+      file.textContent = path;
+      elements.diffFiles.append(file);
+    }
+    elements.diffPatch.textContent = preview.patch;
+    elements.diffNote.textContent = preview.truncated
+      ? "Preview capped at 160 KB. Apply still transfers the complete exact tree."
+      : "Read-only preview of the complete isolated tree.";
+  } catch (error) {
+    elements.diffStat.textContent = "Could not load this diff.";
+    elements.diffNote.textContent = error.message;
+  } finally {
+    document.querySelectorAll("[data-workspace-action]").forEach((button) => {
+      button.disabled = running;
+    });
   }
 }
 
@@ -278,6 +361,7 @@ async function runWorkspaceAction(action, id) {
   document.querySelectorAll("[data-workspace-action]").forEach((button) => {
     button.disabled = true;
   });
+  elements.workspacePanel.setAttribute("aria-busy", "true");
   elements.workspaceStatus.textContent = `${action[0].toUpperCase()}${action.slice(1)} in progress…`;
   try {
     const result = await operations[action](id);
@@ -293,6 +377,7 @@ async function runWorkspaceAction(action, id) {
     elements.workspaceStatus.textContent = error.message;
   }
   await refreshWorkspaces();
+  elements.workspacePanel.setAttribute("aria-busy", "false");
 }
 
 function setRunState(state, title) {
@@ -501,7 +586,103 @@ elements.historyList.addEventListener("click", (event) => {
 });
 elements.workspaceList.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-workspace-action]");
-  if (button) runWorkspaceAction(button.dataset.workspaceAction, button.dataset.workspaceId);
+  if (!button) return;
+  if (button.dataset.workspaceAction === "diff") {
+    showWorkspaceDiff(button.dataset.workspaceId);
+  } else {
+    runWorkspaceAction(button.dataset.workspaceAction, button.dataset.workspaceId);
+  }
+});
+
+elements.copyDiagnostics.addEventListener("click", async () => {
+  elements.copyDiagnostics.disabled = true;
+  const diagnostics = [
+    `Duet run state: ${elements.runState.textContent}`,
+    `Codex: ${elements.codexDetail.textContent}`,
+    `Claude Code: ${elements.claudeDetail.textContent}`,
+    "",
+    elements.log.textContent
+  ].join("\n");
+  try {
+    const result = await window.duet.copyText(diagnostics);
+    elements.copyStatus.textContent = `Copied ${result.copied.toLocaleString()} characters.`;
+  } catch (error) {
+    elements.copyStatus.textContent = error.message;
+  } finally {
+    elements.copyDiagnostics.disabled = false;
+  }
+});
+
+elements.openSettings.addEventListener("click", async () => {
+  if (!settings) await refreshSettings();
+  if (!settings || elements.settingsDialog.open) return;
+  applySettings(settings);
+  elements.settingsStatus.textContent = "";
+  elements.settingsDialog.showModal();
+});
+
+document.querySelector("#close-settings").addEventListener("click", () => {
+  elements.settingsDialog.close();
+});
+
+elements.settingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  elements.settingsStatus.textContent = "Saving…";
+  try {
+    const saved = await window.duet.updateSettings({
+      maxMinutes: elements.settingsMaxMinutes.value,
+      maxRounds: elements.settingsMaxRounds.value,
+      reviewModel: elements.settingsReviewModel.value,
+      verificationCommand: elements.settingsVerification.value
+    });
+    applySettings(saved);
+    elements.settingsDialog.close();
+    elements.formMessage.textContent = "Run defaults saved locally.";
+  } catch (error) {
+    elements.settingsStatus.textContent = error.message;
+  }
+});
+
+document.querySelector("#reset-settings").addEventListener("click", async () => {
+  elements.settingsStatus.textContent = "Resetting…";
+  try {
+    const reset = await window.duet.resetSettings();
+    applySettings(reset);
+    elements.settingsStatus.textContent = "Safe defaults restored.";
+  } catch (error) {
+    elements.settingsStatus.textContent = error.message;
+  }
+});
+
+document.querySelector("#finish-onboarding").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  elements.onboardingStatus.textContent = "Saving local preference…";
+  try {
+    const saved = await window.duet.updateSettings({ onboardingComplete: true });
+    applySettings(saved);
+    elements.onboardingDialog.close();
+    elements.chooseProject.focus();
+  } catch (error) {
+    elements.onboardingStatus.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+elements.onboardingDialog.addEventListener("cancel", (event) => {
+  if (!settings?.onboardingComplete) event.preventDefault();
+});
+
+elements.onboardingDialog.addEventListener("close", () => {
+  if (settings?.onboardingComplete) return;
+  queueMicrotask(() => {
+    if (!elements.onboardingDialog.open) elements.onboardingDialog.showModal();
+  });
+});
+
+document.querySelector("#close-diff").addEventListener("click", () => {
+  elements.diffDialog.close();
 });
 elements.task.addEventListener("input", () => {
   elements.taskCount.textContent = `${elements.task.value.length.toLocaleString()} / 12,000`;
@@ -529,6 +710,9 @@ elements.form.addEventListener("submit", async (event) => {
   }
 });
 
-refreshHealth();
-refreshWorkspaces();
-refreshHistory();
+Promise.all([
+  refreshHealth(),
+  refreshHistory(),
+  refreshSettings(),
+  refreshWorkspaces()
+]);

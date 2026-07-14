@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  net,
+  protocol,
+  session
+} from "electron";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { serializeDuetError } from "./core/errors.mjs";
@@ -10,12 +19,18 @@ import {
 } from "./core/history.mjs";
 import { runDuet } from "./core/orchestrator.mjs";
 import {
+  loadSettings,
+  resetSettings,
+  updateSettings
+} from "./core/settings.mjs";
+import {
   applyManagedWorkspace,
   discardManagedWorkspace,
   finalizeManagedWorkspace,
   listManagedWorkspaces,
   recoverManagedWorkspaces,
-  undoManagedWorkspace
+  undoManagedWorkspace,
+  workspaceDiff
 } from "./core/workspace.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -132,6 +147,16 @@ async function createWindow() {
 handle("duet:health", () => probeCliHealth());
 handle("duet:history", () => listRunHistory(historyStorageRoot()));
 handle("duet:history-read", (id) => readRunReceipt(historyStorageRoot(), id));
+handle("duet:settings", () => loadSettings(app.getPath("userData")));
+handle("duet:settings-reset", () => resetSettings(app.getPath("userData")));
+handle("duet:settings-update", (patch) =>
+  updateSettings(app.getPath("userData"), patch)
+);
+handle("duet:copy-text", (value) => {
+  const text = String(value || "").slice(-12_000);
+  clipboard.writeText(text);
+  return { copied: text.length };
+});
 handle("duet:select-project", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory"]
@@ -171,6 +196,9 @@ handle("duet:cancel", () => {
   return { cancelled: true };
 });
 handle("duet:workspaces", () => listManagedWorkspaces(workspaceStorageRoot()));
+handle("duet:workspace-diff", (id) =>
+  mutateWorkspace(() => workspaceDiff(workspaceStorageRoot(), id))
+);
 handle("duet:workspace-apply", (id) =>
   mutateWorkspace(() => applyManagedWorkspace(workspaceStorageRoot(), id))
 );

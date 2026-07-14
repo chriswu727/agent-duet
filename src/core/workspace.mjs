@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   chmod,
   mkdir,
+  open,
   readFile,
   readdir,
   rename,
@@ -36,6 +37,14 @@ const APPLYABLE_STATES = new Set([
   WORKSPACE_STATE.INTERRUPTED,
   WORKSPACE_STATE.PENDING
 ]);
+const PREVIEWABLE_STATES = new Set([
+  WORKSPACE_STATE.ACTIVE,
+  WORKSPACE_STATE.APPLIED,
+  WORKSPACE_STATE.CONFLICT,
+  WORKSPACE_STATE.INTERRUPTED,
+  WORKSPACE_STATE.PENDING
+]);
+const MAX_DIFF_PREVIEW_BYTES = 160_000;
 
 function iso(now = Date.now()) {
   return new Date(now).toISOString();
@@ -143,6 +152,27 @@ async function workingTree(manifest, cwd) {
   }
 }
 
+async function readDiffPreview(path) {
+  const metadata = await stat(path);
+  const length = Math.min(metadata.size, MAX_DIFF_PREVIEW_BYTES);
+  const buffer = Buffer.alloc(length);
+  const handle = await open(path, "r");
+  try {
+    const { bytesRead } = await handle.read(buffer, 0, length, 0);
+    let content = buffer.subarray(0, bytesRead);
+    if (metadata.size > MAX_DIFF_PREVIEW_BYTES) {
+      const newline = content.lastIndexOf(0x0a);
+      if (newline > 0) content = content.subarray(0, newline + 1);
+    }
+    return {
+      patch: content.toString("utf8"),
+      truncated: metadata.size > MAX_DIFF_PREVIEW_BYTES
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
 export function defaultWorkspaceStorageRoot() {
   return join(homedir(), ".agent-duet", "workspaces");
 }
@@ -154,6 +184,8 @@ export function workspaceSummary(manifest) {
     canApply: APPLYABLE_STATES.has(state),
     canDiscard: APPLYABLE_STATES.has(state) || state === WORKSPACE_STATE.BROKEN,
     canFinalize: state === WORKSPACE_STATE.APPLIED,
+    canPreview:
+      PREVIEWABLE_STATES.has(state) && Boolean(manifest.changedFiles?.length),
     canUndo: state === WORKSPACE_STATE.APPLIED && Boolean(manifest.appliedPatch),
     changedFiles: [...(manifest.changedFiles || [])],
     createdAt: manifest.createdAt,
@@ -164,6 +196,54 @@ export function workspaceSummary(manifest) {
     state,
     updatedAt: manifest.updatedAt
   };
+}
+
+export async function workspaceDiff(storageRoot, id) {
+  const manifest = await load(storageRoot, id);
+  let targetTree;
+  if (
+    manifest.state !== WORKSPACE_STATE.APPLIED &&
+    await pathExists(manifest.workspacePath)
+  ) {
+    targetTree = await workingTree(manifest, manifest.workspacePath);
+  } else {
+    targetTree = manifest.expectedTree;
+  }
+  if (!targetTree) throw new Error("This workspace has no diff available to inspect.");
+
+  const preview = join(dirname(manifest.manifestPath), `preview-${randomUUID()}.diff`);
+  try {
+    await runGit(manifest.projectRoot, [
+      "diff",
+      "--no-color",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--unified=3",
+      `--output=${preview}`,
+      manifest.baseTree,
+      targetTree
+    ]);
+    const [content, diffStat] = await Promise.all([
+      readDiffPreview(preview),
+      runGit(manifest.projectRoot, [
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--stat",
+        manifest.baseTree,
+        targetTree
+      ])
+    ]);
+    return {
+      changedFiles: [...(manifest.changedFiles || [])],
+      patch: content.patch || "No textual diff is available.",
+      projectRoot: manifest.projectRoot,
+      stat: diffStat.trim() || "No file changes.",
+      truncated: content.truncated
+    };
+  } finally {
+    await rm(preview, { force: true });
+  }
 }
 
 export async function createManagedWorkspace({
