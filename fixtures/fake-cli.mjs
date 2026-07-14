@@ -26,6 +26,7 @@ if (role === "codex") {
 --agent
 --agents
 --disable-slash-commands
+--json-schema
 --mcp-config
 --no-chrome
 --no-session-persistence

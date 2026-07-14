@@ -1,4 +1,11 @@
+import {
+  DuetError,
+  ERROR_CATEGORY,
+  ERROR_CODE,
+  transientProcessFailure
+} from "./errors.mjs";
 import { runProcess } from "./process.mjs";
+import { REVIEW_JSON_SCHEMA } from "./review.mjs";
 
 const reviewer = {
   "duet-reviewer": {
@@ -37,6 +44,8 @@ export function claudeReviewArgs({ model, prompt }) {
     "duet-reviewer",
     "--model",
     model,
+    "--json-schema",
+    JSON.stringify(REVIEW_JSON_SCHEMA),
     "--permission-mode",
     "plan",
     "--no-session-persistence",
@@ -56,25 +65,68 @@ export async function reviewWithClaude({
   runner = runProcess,
   signal
 }) {
-  const result = await runner(command, claudeReviewArgs({ model, prompt }), {
-    cwd,
-    maxOutputChars: 200_000,
-    signal,
-    timeoutMs: 30 * 60_000
-  });
-  if (result.timedOut) throw new Error("Claude review timed out.");
+  let result;
+  try {
+    result = await runner(command, claudeReviewArgs({ model, prompt }), {
+      cwd,
+      maxOutputChars: 200_000,
+      signal,
+      timeoutMs: 30 * 60_000
+    });
+  } catch (error) {
+    throw new DuetError(
+      ERROR_CODE.CLAUDE_REVIEW_FAILED,
+      `Could not launch Claude Code: ${error.message}`,
+      {
+        category: ERROR_CATEGORY.PROCESS,
+        cause: error,
+        phase: "review",
+        retryable: transientProcessFailure(error.message)
+      }
+    );
+  }
+  if (result.timedOut) {
+    throw new DuetError(
+      ERROR_CODE.CLAUDE_REVIEW_TIMEOUT,
+      "Claude review timed out.",
+      { category: ERROR_CATEGORY.EXTERNAL, phase: "review" }
+    );
+  }
   if (result.code !== 0) {
-    throw new Error(result.stderr.trim() || "Claude review failed.");
+    const message = result.stderr.trim() || "Claude review failed.";
+    throw new DuetError(ERROR_CODE.CLAUDE_REVIEW_FAILED, message, {
+      category: ERROR_CATEGORY.EXTERNAL,
+      phase: "review",
+      retryable: transientProcessFailure(message)
+    });
   }
   if (result.stderr.trim()) onLog?.(result.stderr.trim().slice(-2_000));
   let parsed;
   try {
     parsed = JSON.parse(result.stdout);
   } catch {
-    throw new Error("Claude returned invalid JSON output.");
+    throw new DuetError(
+      ERROR_CODE.CLAUDE_OUTPUT_INVALID,
+      "Claude Code returned invalid JSON output.",
+      { category: ERROR_CATEGORY.PROTOCOL, phase: "review" }
+    );
   }
-  if (parsed.is_error || typeof parsed.result !== "string") {
-    throw new Error(parsed.result || "Claude review returned no result.");
+  if (parsed.is_error) {
+    const message = typeof parsed.result === "string"
+      ? parsed.result
+      : "Claude review returned an error.";
+    throw new DuetError(ERROR_CODE.CLAUDE_REVIEW_FAILED, message, {
+      category: ERROR_CATEGORY.EXTERNAL,
+      phase: "review",
+      retryable: transientProcessFailure(message)
+    });
   }
-  return parsed.result;
+  if (!parsed.structured_output || typeof parsed.structured_output !== "object") {
+    throw new DuetError(
+      ERROR_CODE.CLAUDE_OUTPUT_INVALID,
+      "Claude Code returned no structured review.",
+      { category: ERROR_CATEGORY.PROTOCOL, phase: "review" }
+    );
+  }
+  return parsed.structured_output;
 }

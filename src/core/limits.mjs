@@ -1,3 +1,5 @@
+import { DuetError, ERROR_CATEGORY, ERROR_CODE } from "./errors.mjs";
+
 export const HARD_LIMITS = Object.freeze({
   maxRounds: 6,
   maxTaskChars: 12_000,
@@ -9,10 +11,22 @@ export const HARD_LIMITS = Object.freeze({
 export function normalizeRunConfig(input) {
   const task = String(input.task || "").trim();
   const projectPath = String(input.projectPath || "").trim();
-  if (!task) throw new Error("Task is required.");
-  if (!projectPath) throw new Error("Project folder is required.");
+  if (!task) {
+    throw new DuetError(ERROR_CODE.CONFIG_INVALID, "Task is required.", {
+      category: ERROR_CATEGORY.CONFIGURATION
+    });
+  }
+  if (!projectPath) {
+    throw new DuetError(ERROR_CODE.CONFIG_INVALID, "Project folder is required.", {
+      category: ERROR_CATEGORY.CONFIGURATION
+    });
+  }
   if (task.length > HARD_LIMITS.maxTaskChars) {
-    throw new Error(`Task is limited to ${HARD_LIMITS.maxTaskChars} characters.`);
+    throw new DuetError(
+      ERROR_CODE.CONFIG_INVALID,
+      `Task is limited to ${HARD_LIMITS.maxTaskChars} characters.`,
+      { category: ERROR_CATEGORY.CONFIGURATION }
+    );
   }
 
   const maxRounds = Math.max(

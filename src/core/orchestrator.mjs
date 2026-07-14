@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { reviewWithClaude } from "./claude.mjs";
+import {
+  asDuetError,
+  DuetError,
+  ERROR_CATEGORY,
+  ERROR_CODE,
+  retryOperation,
+  serializeDuetError
+} from "./errors.mjs";
 import { probeCliHealth } from "./health.mjs";
 import { gitSnapshot, repositoryHead, repositoryRoot } from "./git.mjs";
 import { capText, estimateTokens, HARD_LIMITS, normalizeRunConfig } from "./limits.mjs";
@@ -15,8 +23,11 @@ import {
   beginReceipt,
   finalizeReceipt,
   recordReceiptRound,
+  recordReceiptRetry,
+  recordReceiptWarning,
   setReceiptProject
 } from "./receipt.mjs";
+import { formatReview } from "./review.mjs";
 import { runVerification } from "./verify.mjs";
 import {
   createManagedWorkspace,
@@ -29,10 +40,12 @@ import {
 export const RUN_STATUS = Object.freeze({
   BLOCKED: "blocked",
   COMPLETED: "completed",
+  FAILED: "failed",
   STOPPED: "stopped"
 });
 
 export const STOP_REASON = Object.freeze({
+  ERROR: "error",
   NO_PROGRESS: "no_progress",
   REPEATED_FINDINGS: "repeated_findings",
   REVIEW_BLOCKED: "review_blocked",
@@ -42,9 +55,45 @@ export const STOP_REASON = Object.freeze({
   VERIFIED: "verified"
 });
 
-function digest(text) {
-  return createHash("sha256").update(String(text || "").trim()).digest("hex");
+function digest(value) {
+  const serialized = typeof value === "string" ? value.trim() : JSON.stringify(value);
+  return createHash("sha256").update(serialized).digest("hex");
 }
+
+const phaseErrors = Object.freeze({
+  codex_connect: {
+    category: ERROR_CATEGORY.PROCESS,
+    code: ERROR_CODE.CODEX_CONNECT_FAILED
+  },
+  implement: {
+    category: ERROR_CATEGORY.EXTERNAL,
+    code: ERROR_CODE.CODEX_FAILED
+  },
+  inspect: {
+    category: ERROR_CATEGORY.GIT,
+    code: ERROR_CODE.GIT_INSPECTION_FAILED
+  },
+  preflight: {
+    category: ERROR_CATEGORY.PROCESS,
+    code: ERROR_CODE.PREFLIGHT_FAILED
+  },
+  review: {
+    category: ERROR_CATEGORY.EXTERNAL,
+    code: ERROR_CODE.CLAUDE_REVIEW_FAILED
+  },
+  revise: {
+    category: ERROR_CATEGORY.EXTERNAL,
+    code: ERROR_CODE.CODEX_FAILED
+  },
+  verification: {
+    category: ERROR_CATEGORY.VERIFICATION,
+    code: ERROR_CODE.VERIFICATION_FAILED
+  },
+  workspace: {
+    category: ERROR_CATEGORY.FILESYSTEM,
+    code: ERROR_CODE.WORKSPACE_FAILED
+  }
+});
 
 function createDeadline(maxMinutes) {
   const controller = new AbortController();
@@ -81,6 +130,7 @@ const defaults = Object.freeze({
   repositoryHead,
   repositoryRoot,
   reviewWithClaude,
+  retryOperation,
   runVerification,
   summarizeWorkspace: workspaceSummary
 });
@@ -108,9 +158,32 @@ export async function runDuet(
   let codex;
   let handoffChars = 0;
   let lastSnapshot;
+  let phase = "preflight";
   let workspace;
 
+  const closeCodex = async () => {
+    const session = codex;
+    codex = null;
+    if (!session) return;
+    try {
+      await session.close();
+    } catch (error) {
+      const warning = serializeDuetError(new DuetError(
+        ERROR_CODE.CLEANUP_FAILED,
+        `Could not fully close the Codex session: ${error.message}`,
+        {
+          category: ERROR_CATEGORY.PROCESS,
+          cause: error,
+          phase: "cleanup"
+        }
+      ));
+      recordReceiptWarning(receipt, { ...warning, time: dependencies.now() });
+      emit("warning", warning);
+    }
+  };
+
   const finish = async (result) => {
+    await closeCodex();
     const completed = {
       ...result,
       receipt: finalizeReceipt(receipt, result, dependencies.now())
@@ -129,33 +202,51 @@ export async function runDuet(
     emit("phase", { name: "preflight", message: "Checking CLIs, subscriptions, and Git." });
     const health = await dependencies.probeCliHealth();
     if (!health.codex.subscription) {
-      throw new Error("Codex must be installed and logged in using ChatGPT.");
+      throw new DuetError(
+        ERROR_CODE.CODEX_AUTH_REQUIRED,
+        "Codex must be installed and logged in using ChatGPT.",
+        { category: ERROR_CATEGORY.AUTH, phase }
+      );
     }
     if (!health.claude.subscription) {
-      throw new Error("Claude Code must be installed and logged in using Claude.ai.");
+      throw new DuetError(
+        ERROR_CODE.CLAUDE_AUTH_REQUIRED,
+        "Claude Code must be installed and logged in using Claude.ai.",
+        { category: ERROR_CATEGORY.AUTH, phase }
+      );
     }
     if (!health.codex.compatible) {
-      throw new Error(
+      throw new DuetError(
+        ERROR_CODE.CODEX_INCOMPATIBLE,
         health.codex.compatibilityError ||
-          "Codex must support the local MCP server command. Update Codex and try again."
+          "Codex must support the local MCP server command. Update Codex and try again.",
+        { category: ERROR_CATEGORY.COMPATIBILITY, phase }
       );
     }
     if (!health.claude.compatible) {
-      throw new Error(
+      throw new DuetError(
+        ERROR_CODE.CLAUDE_INCOMPATIBLE,
         health.claude.compatibilityError ||
-          "Claude Code is missing options required for isolated review. Update it and try again."
+          "Claude Code is missing options required for isolated review. Update it and try again.",
+        { category: ERROR_CATEGORY.COMPATIBILITY, phase }
       );
     }
 
+    phase = "inspect";
     const root = await dependencies.repositoryRoot(config.projectPath);
     const [baseCommit, initial] = await Promise.all([
       dependencies.repositoryHead(root),
       dependencies.gitSnapshot(root)
     ]);
     if (!initial.clean) {
-      throw new Error("Duet requires a clean Git working tree to protect existing changes.");
+      throw new DuetError(
+        ERROR_CODE.DIRTY_WORKTREE,
+        "Duet requires a clean Git working tree to protect existing changes.",
+        { category: ERROR_CATEGORY.GIT, phase }
+      );
     }
     setReceiptProject(receipt, { baseCommit, root });
+    phase = "workspace";
     workspace = await dependencies.createWorkspace({
       baseCommit,
       id: receipt.id,
@@ -171,6 +262,7 @@ export async function runDuet(
     });
     runSignal.throwIfAborted();
 
+    phase = "codex_connect";
     codex = dependencies.createCodexSession({
       args: ["mcp-server", "-c", "mcp_servers={}"],
       command: health.codex.path,
@@ -180,6 +272,7 @@ export async function runDuet(
     });
     await codex.connect(["codex", "codex-reply"]);
 
+    phase = "implement";
     emit("phase", { name: "implement", message: "Codex is implementing the task." });
     const firstPrompt = implementationPrompt(config);
     handoffChars += firstPrompt.length;
@@ -196,7 +289,13 @@ export async function runDuet(
         { signal: runSignal }
       )
     );
-    if (!first.threadId) throw new Error("Codex did not return a threadId.");
+    if (!first.threadId) {
+      throw new DuetError(
+        ERROR_CODE.CODEX_PROTOCOL_INVALID,
+        "Codex did not return a threadId.",
+        { category: ERROR_CATEGORY.PROTOCOL, phase }
+      );
+    }
     emit("agent", { agent: "codex", round: 1, text: capText(first.content) });
 
     let previousDiffHash;
@@ -204,8 +303,10 @@ export async function runDuet(
 
     for (let round = 1; round <= config.maxRounds; round += 1) {
       runSignal.throwIfAborted();
+      phase = "inspect";
       const snapshot = await dependencies.gitSnapshot(runRoot, baseCommit);
       lastSnapshot = snapshot;
+      phase = "verification";
       const verification = await dependencies.runVerification(
         config.verificationCommand,
         runRoot,
@@ -217,6 +318,7 @@ export async function runDuet(
         round
       });
 
+      phase = "review";
       emit("phase", {
         name: "review",
         message: `Claude is independently reviewing round ${round}.`
@@ -227,20 +329,38 @@ export async function runDuet(
         verification
       });
       handoffChars += reviewerPrompt.length;
-      const reviewText = await dependencies.reviewWithClaude({
-        command: health.claude.path,
-        cwd: runRoot,
-        model: config.reviewModel,
-        onLog: (message) => emit("log", { agent: "claude", message }),
-        prompt: reviewerPrompt,
-        signal: runSignal
-      });
-      const review = parseReview(reviewText);
+      const reviewOutput = await dependencies.retryOperation(
+        () => dependencies.reviewWithClaude({
+          command: health.claude.path,
+          cwd: runRoot,
+          model: config.reviewModel,
+          onLog: (message) => emit("log", { agent: "claude", message }),
+          prompt: reviewerPrompt,
+          signal: runSignal
+        }),
+        {
+          maxAttempts: 2,
+          onRetry: ({ attempt, delayMs, error, maxAttempts }) => {
+            const retry = {
+              attempt,
+              code: error.code || ERROR_CODE.CLAUDE_REVIEW_FAILED,
+              delayMs,
+              maxAttempts,
+              operation: "claude_review",
+              time: dependencies.now()
+            };
+            recordReceiptRetry(receipt, retry);
+            emit("retry", retry);
+          },
+          signal: runSignal
+        }
+      );
+      const review = parseReview(reviewOutput);
       recordReceiptRound(receipt, { review, round, snapshot, verification });
       emit("agent", {
         agent: "claude",
         round,
-        text: capText(review.raw || review.findings),
+        text: capText(formatReview(review)),
         verdict: review.verdict
       });
       emit("metrics", {
@@ -263,7 +383,7 @@ export async function runDuet(
       if (review.verdict === "BLOCKED") {
         return await finish({
           changedFiles: snapshot.changed,
-          detail: review.findings,
+          detail: review.blockedReason || review.summary,
           reason: STOP_REASON.REVIEW_BLOCKED,
           round,
           status: RUN_STATUS.BLOCKED
@@ -290,6 +410,7 @@ export async function runDuet(
       previousFindingHash = findingHash;
       previousDiffHash = snapshot.hash;
 
+      phase = "revise";
       emit("phase", {
         name: "revise",
         message: `Codex is addressing verified findings from round ${round}.`
@@ -309,6 +430,7 @@ export async function runDuet(
         text: capText(revision.content)
       });
 
+      phase = "inspect";
       const revisedSnapshot = await dependencies.gitSnapshot(runRoot, baseCommit);
       lastSnapshot = revisedSnapshot;
       if (revisedSnapshot.hash === previousDiffHash) {
@@ -337,8 +459,23 @@ export async function runDuet(
         status: RUN_STATUS.STOPPED
       });
     }
+    const classified = asDuetError(error, {
+      ...(phaseErrors[phase] || {}),
+      phase
+    });
+    await closeCodex();
+    classified.receipt = finalizeReceipt(
+      receipt,
+      {
+        changedFiles: lastSnapshot?.changed || [],
+        error: serializeDuetError(classified),
+        reason: STOP_REASON.ERROR,
+        status: RUN_STATUS.FAILED
+      },
+      dependencies.now()
+    );
     if (workspace) {
-      await dependencies.markWorkspaceInterrupted(workspace, error).catch(
+      await dependencies.markWorkspaceInterrupted(workspace, classified).catch(
         (stateError) =>
           emit("log", {
             agent: "duet",
@@ -346,9 +483,9 @@ export async function runDuet(
           })
       );
     }
-    throw error;
+    throw classified;
   } finally {
     deadline.dispose();
-    await codex?.close();
+    await closeCodex();
   }
 }

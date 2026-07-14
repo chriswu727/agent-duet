@@ -4,6 +4,7 @@ export const REQUIRED_CLAUDE_FLAGS = Object.freeze([
   "--agent",
   "--agents",
   "--disable-slash-commands",
+  "--json-schema",
   "--mcp-config",
   "--no-chrome",
   "--no-session-persistence",

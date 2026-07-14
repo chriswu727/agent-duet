@@ -6,6 +6,9 @@ test("isolates the Claude reviewer from nested MCP and write tools", () => {
   const args = claudeReviewArgs({ model: "sonnet", prompt: "Review this" });
   assert.ok(args.includes("--strict-mcp-config"));
   assert.ok(args.includes("--disable-slash-commands"));
+  assert.ok(args.includes("--json-schema"));
+  const schema = JSON.parse(args[args.indexOf("--json-schema") + 1]);
+  assert.deepEqual(schema.properties.verdict.enum, ["PASS", "REVISE", "BLOCKED"]);
   const agents = JSON.parse(args[args.indexOf("--agents") + 1]);
   const reviewer = agents["duet-reviewer"];
   assert.equal(reviewer.permissionMode, "plan");
@@ -17,6 +20,13 @@ test("isolates the Claude reviewer from nested MCP and write tools", () => {
 });
 
 test("extracts structured Claude CLI output without a live model call", async () => {
+  const structured = {
+    blockedReason: "",
+    checks: [],
+    findings: [],
+    summary: "No defects found.",
+    verdict: "PASS"
+  };
   const result = await reviewWithClaude({
     command: "claude",
     cwd: "/repo",
@@ -25,11 +35,29 @@ test("extracts structured Claude CLI output without a live model call", async ()
     runner: async () => ({
       code: 0,
       stderr: "",
-      stdout: JSON.stringify({ is_error: false, result: "VERDICT: PASS" }),
+      stdout: JSON.stringify({ is_error: false, structured_output: structured }),
       timedOut: false
     })
   });
-  assert.equal(result, "VERDICT: PASS");
+  assert.deepEqual(result, structured);
+});
+
+test("rejects a successful Claude envelope without structured output", async () => {
+  await assert.rejects(
+    reviewWithClaude({
+      command: "claude",
+      cwd: "/repo",
+      model: "haiku",
+      prompt: "Review this",
+      runner: async () => ({
+        code: 0,
+        stderr: "",
+        stdout: JSON.stringify({ is_error: false, result: "Looks good" }),
+        timedOut: false
+      })
+    }),
+    (error) => error.code === "claude_output_invalid"
+  );
 });
 
 test("rejects malformed Claude CLI output", async () => {

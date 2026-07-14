@@ -1,20 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DuetError,
+  ERROR_CATEGORY,
+  ERROR_CODE,
+  retryOperation
+} from "../src/core/errors.mjs";
+import {
   RUN_STATUS,
   runDuet,
   STOP_REASON
 } from "../src/core/orchestrator.mjs";
 
-const PASS = `VERDICT: PASS
-FINDINGS:
-CHECKS:
-- tests pass`;
-const REVISE = `VERDICT: REVISE
-FINDINGS:
-- [P1] src/app.js:4 — wrong branch
-CHECKS:
-- add a regression test`;
+const PASS = {
+  blockedReason: "",
+  checks: [{ evidence: "pnpm test exited 0", name: "pnpm test", status: "passed" }],
+  findings: [],
+  summary: "No actionable defects found.",
+  verdict: "PASS"
+};
+const REVISE = {
+  blockedReason: "",
+  checks: [{ evidence: "Missing branch coverage", name: "regression test", status: "not_run" }],
+  findings: [{
+    evidence: "The false branch returns the success value.",
+    line: 4,
+    path: "src/app.js",
+    priority: "P1",
+    suggestion: "Return the failure value and add a regression test.",
+    title: "Wrong branch"
+  }],
+  summary: "One correctness defect needs revision.",
+  verdict: "REVISE"
+};
 
 function snapshot(hash, { changed = ["src/app.js"], clean = false } = {}) {
   return {
@@ -28,6 +46,7 @@ function snapshot(hash, { changed = ["src/app.js"], clean = false } = {}) {
 
 function createHarness({
   callError,
+  closeError,
   connectError,
   health = {
     claude: { compatible: true, path: "/bin/claude", subscription: true },
@@ -65,6 +84,7 @@ function createHarness({
     },
     async close() {
       this.closed = true;
+      if (closeError) throw closeError;
     },
     async connect(requiredTools) {
       this.requiredTools = requiredTools;
@@ -117,8 +137,14 @@ function createHarness({
     reviewWithClaude: async () => {
       if (reviewError) throw reviewError;
       assert.ok(reviewIndex < reviews.length, "Unexpected Claude review request");
-      return reviews[reviewIndex++];
+      const review = reviews[reviewIndex++];
+      if (review instanceof Error) throw review;
+      return review;
     },
+    retryOperation: (operation, options) => retryOperation(operation, {
+      ...options,
+      waitForRetry: async () => {}
+    }),
     runVerification: async () => {
       if (verificationError) throw verificationError;
       const index = Math.min(verificationIndex++, verifications.length - 1);
@@ -138,6 +164,9 @@ function createHarness({
     events,
     get deadlineDisposed() {
       return deadlineDisposed;
+    },
+    get reviewCalls() {
+      return reviewIndex;
     },
     onEvent: (event) => events.push(event),
     workspace
@@ -183,7 +212,7 @@ test("completes after a passing review and machine check", async () => {
       "metrics"
     ]
   );
-  assert.equal(result.receipt.schemaVersion, 1);
+  assert.equal(result.receipt.schemaVersion, 2);
   assert.equal(result.receipt.id, "run-1");
   assert.equal(result.receipt.project.baseCommit, "abc123");
   assert.equal(result.receipt.project.root, "/repo");
@@ -234,8 +263,30 @@ test("fails closed on malformed reviewer output", async () => {
 
   assert.equal(result.status, RUN_STATUS.BLOCKED);
   assert.equal(result.reason, STOP_REASON.REVIEW_BLOCKED);
-  assert.equal(result.detail, "Unstructured reviewer response");
+  assert.match(result.detail, /did not satisfy Duet's protocol/);
   assert.equal(result.receipt.result.detail, result.detail);
+  assert.equal(result.receipt.rounds[0].review.protocolError, ERROR_CODE.REVIEW_PROTOCOL_INVALID);
+});
+
+test("retries one transient read-only review and records the attempt", async () => {
+  const transient = new DuetError(
+    ERROR_CODE.CLAUDE_REVIEW_FAILED,
+    "Service temporarily unavailable",
+    {
+      category: ERROR_CATEGORY.EXTERNAL,
+      phase: "review",
+      retryable: true
+    }
+  );
+  const harness = createHarness({ reviews: [transient, PASS] });
+  const result = await runDuet(config(), harness);
+
+  assert.equal(result.status, RUN_STATUS.COMPLETED);
+  assert.equal(harness.reviewCalls, 2);
+  assert.deepEqual(result.receipt.retries.map((retry) => retry.code), [
+    ERROR_CODE.CLAUDE_REVIEW_FAILED
+  ]);
+  assert.equal(harness.events.filter((event) => event.type === "retry").length, 1);
 });
 
 test("stops when the reviewer repeats the same findings", async () => {
@@ -301,18 +352,36 @@ test("distinguishes user cancellation from timeout", async () => {
 
 test("closes Codex and disposes the deadline when MCP connection fails", async () => {
   const harness = createHarness({ connectError: new Error("missing codex tool") });
-  await assert.rejects(runDuet(config(), harness), /missing codex tool/);
+  let captured;
+  await assert.rejects(runDuet(config(), harness), (error) => {
+    captured = error;
+    return /missing codex tool/.test(error.message);
+  });
   assert.equal(harness.codex.closed, true);
   assert.equal(harness.deadlineDisposed, true);
   assert.equal(harness.workspace.state, "interrupted");
   assert.equal(harness.workspace.error, "missing codex tool");
+  assert.equal(captured.code, ERROR_CODE.CODEX_CONNECT_FAILED);
+  assert.equal(captured.receipt.result.status, RUN_STATUS.FAILED);
+  assert.equal(captured.receipt.result.error.category, ERROR_CATEGORY.PROCESS);
 });
 
 test("closes Codex when implementation fails", async () => {
   const harness = createHarness({ callError: new Error("Codex failed") });
   await assert.rejects(runDuet(config(), harness), /Codex failed/);
   assert.equal(harness.codex.closed, true);
+  assert.equal(harness.codex.calls.length, 1);
   assert.equal(harness.deadlineDisposed, true);
+});
+
+test("preserves a successful result when Codex cleanup reports a warning", async () => {
+  const harness = createHarness({ closeError: new Error("transport already closed") });
+  const result = await runDuet(config(), harness);
+
+  assert.equal(result.status, RUN_STATUS.COMPLETED);
+  assert.equal(result.receipt.warnings[0].code, ERROR_CODE.CLEANUP_FAILED);
+  assert.equal(result.receipt.warnings[0].phase, "cleanup");
+  assert.equal(harness.events.filter((event) => event.type === "warning").length, 1);
 });
 
 test("closes Codex when Claude review fails", async () => {
