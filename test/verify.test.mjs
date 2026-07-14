@@ -20,8 +20,9 @@ test("selects the native verification shell on each platform", () => {
       targetPlatform: "win32"
     }),
     {
-      args: ["/d", "/s", "/c", "pnpm test"],
-      shell: "C:\\Windows\\System32\\cmd.exe"
+      args: ["/d", "/s", "/c", '"pnpm test"'],
+      shell: "C:\\Windows\\System32\\cmd.exe",
+      windowsVerbatimArguments: true
     }
   );
 });

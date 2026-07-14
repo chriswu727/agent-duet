@@ -178,7 +178,8 @@ export function runProcess(command, args, options = {}) {
     env = subscriptionEnvironment(),
     maxOutputChars = 20_000,
     signal,
-    timeoutMs = 30_000
+    timeoutMs = 30_000,
+    windowsVerbatimArguments = false
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -187,6 +188,7 @@ export function runProcess(command, args, options = {}) {
       detached: platform() !== "win32",
       env,
       shell: false,
+      windowsVerbatimArguments,
       windowsHide: true
     });
     let stdout = "";

@@ -9,7 +9,8 @@ export async function runVerification(command, cwd, signal) {
     env: subscriptionEnvironment(),
     maxOutputChars: 20_000,
     signal,
-    timeoutMs: 10 * 60_000
+    timeoutMs: 10 * 60_000,
+    windowsVerbatimArguments: invocation.windowsVerbatimArguments
   });
 }
 
@@ -19,8 +20,9 @@ export function verificationInvocation(
 ) {
   if (targetPlatform === "win32") {
     return {
-      args: ["/d", "/s", "/c", command],
-      shell: env.ComSpec || "cmd.exe"
+      args: ["/d", "/s", "/c", `"${command}"`],
+      shell: env.ComSpec || "cmd.exe",
+      windowsVerbatimArguments: true
     };
   }
   return {
