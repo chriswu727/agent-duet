@@ -145,6 +145,100 @@ footer {
   margin-bottom: 15px;
 }
 
+.workspace-queue-panel {
+  background: rgba(18, 21, 24, 0.78);
+  border: 1px solid rgba(255, 201, 120, 0.2);
+  border-radius: 14px;
+  margin-bottom: 15px;
+  padding: 16px;
+}
+
+.workspace-queue-header,
+.workspace-item-top,
+.workspace-item-actions {
+  align-items: center;
+  display: flex;
+}
+
+.workspace-queue-header,
+.workspace-item-top {
+  justify-content: space-between;
+}
+
+.workspace-queue-copy,
+.workspace-status,
+.workspace-item p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.workspace-queue-copy {
+  margin: 7px 0 12px;
+}
+
+.workspace-queue,
+.workspace-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace-queue {
+  display: grid;
+  gap: 9px;
+}
+
+.workspace-item {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px;
+}
+
+.workspace-item strong {
+  font-size: 12px;
+}
+
+.workspace-item p {
+  margin: 5px 0;
+}
+
+.workspace-files {
+  color: #7f8993;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.45;
+  margin: 8px 0;
+}
+
+.workspace-item-actions {
+  gap: 7px;
+  justify-content: flex-end;
+  margin-top: 9px;
+}
+
+.workspace-action {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #d8dde2;
+  padding: 7px 10px;
+}
+
+.workspace-action.apply {
+  border-color: rgba(147, 239, 189, 0.25);
+  color: var(--green);
+}
+
+.workspace-action.destructive {
+  color: var(--red);
+}
+
+.workspace-status {
+  margin: 9px 0 0;
+}
+
 .health-card {
   align-items: center;
   background: rgba(18, 21, 24, 0.75);

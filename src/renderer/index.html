@@ -39,6 +39,19 @@
         </article>
       </section>
 
+      <section class="workspace-queue-panel hidden" id="workspace-queue-panel" aria-labelledby="workspace-queue-title">
+        <div class="workspace-queue-header">
+          <div>
+            <span class="eyebrow">Isolated changes</span>
+            <h2 id="workspace-queue-title">Review, apply, or discard safely.</h2>
+          </div>
+          <span class="local-badge">Original repo protected</span>
+        </div>
+        <p class="workspace-queue-copy">Duet keeps agent edits in managed Git worktrees until you explicitly apply them.</p>
+        <ul class="workspace-queue" id="workspace-queue"></ul>
+        <p class="workspace-status" id="workspace-status" role="status"></p>
+      </section>
+
       <section class="workspace">
         <form class="composer" id="run-form">
           <div class="section-heading">
