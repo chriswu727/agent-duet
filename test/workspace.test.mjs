@@ -41,6 +41,10 @@ async function createRepository(t) {
   };
 }
 
+async function readText(path) {
+  return (await readFile(path, "utf8")).replaceAll("\r\n", "\n");
+}
+
 test("keeps changes isolated, applies them, and undoes an exact applied state", async (t) => {
   const repository = await createRepository(t);
   const workspace = await createManagedWorkspace({
@@ -50,7 +54,7 @@ test("keeps changes isolated, applies them, and undoes an exact applied state", 
   await writeFile(join(workspace.workspacePath, "README.md"), "changed\n");
   await writeFile(join(workspace.workspacePath, "binary.dat"), Buffer.from([0, 1, 2, 255]));
 
-  assert.equal(await readFile(join(repository.projectRoot, "README.md"), "utf8"), "base\n");
+  assert.equal(await readText(join(repository.projectRoot, "README.md")), "base\n");
   assert.equal((await gitSnapshot(repository.projectRoot)).clean, true);
 
   await markWorkspacePending(workspace, {
@@ -64,14 +68,14 @@ test("keeps changes isolated, applies them, and undoes an exact applied state", 
   const applied = await applyManagedWorkspace(repository.storageRoot, workspace.id);
   assert.equal(applied.state, WORKSPACE_STATE.APPLIED);
   assert.equal(applied.canUndo, true);
-  assert.equal(await readFile(join(repository.projectRoot, "README.md"), "utf8"), "changed\n");
+  assert.equal(await readText(join(repository.projectRoot, "README.md")), "changed\n");
   assert.deepEqual(
     await readFile(join(repository.projectRoot, "binary.dat")),
     Buffer.from([0, 1, 2, 255])
   );
 
   await undoManagedWorkspace(repository.storageRoot, workspace.id);
-  assert.equal(await readFile(join(repository.projectRoot, "README.md"), "utf8"), "base\n");
+  assert.equal(await readText(join(repository.projectRoot, "README.md")), "base\n");
   await assert.rejects(readFile(join(repository.projectRoot, "binary.dat")), /ENOENT/);
   assert.equal((await gitSnapshot(repository.projectRoot)).clean, true);
   assert.deepEqual(await listManagedWorkspaces(repository.storageRoot), []);
@@ -91,7 +95,7 @@ test("recovers an interrupted run and discards it without touching the repositor
   assert.deepEqual(recovered[0].changedFiles, ["README.md"]);
 
   await discardManagedWorkspace(repository.storageRoot, workspace.id);
-  assert.equal(await readFile(join(repository.projectRoot, "README.md"), "utf8"), "base\n");
+  assert.equal(await readText(join(repository.projectRoot, "README.md")), "base\n");
   assert.equal((await gitSnapshot(repository.projectRoot)).clean, true);
   assert.deepEqual(await listManagedWorkspaces(repository.storageRoot), []);
 });
@@ -113,7 +117,7 @@ test("refuses Apply when the original repository changed", async (t) => {
     applyManagedWorkspace(repository.storageRoot, workspace.id),
     /new changes/
   );
-  assert.equal(await readFile(join(repository.projectRoot, "README.md"), "utf8"), "user\n");
+  assert.equal(await readText(join(repository.projectRoot, "README.md")), "user\n");
   assert.equal((await listManagedWorkspaces(repository.storageRoot))[0].canApply, true);
   await discardManagedWorkspace(repository.storageRoot, workspace.id);
 });
@@ -137,7 +141,7 @@ test("refuses Undo after newer work and lets the user keep the applied result", 
     /changed after Apply/
   );
   assert.equal(
-    await readFile(join(repository.projectRoot, "README.md"), "utf8"),
+    await readText(join(repository.projectRoot, "README.md")),
     "newer user work\n"
   );
   await finalizeManagedWorkspace(repository.storageRoot, workspace.id);
@@ -214,7 +218,7 @@ test("recovers an Apply interrupted after the target files were written", async 
   assert.equal(recovered[0].state, WORKSPACE_STATE.APPLIED);
   assert.equal(recovered[0].canUndo, true);
   assert.equal(
-    await readFile(join(repository.projectRoot, "README.md"), "utf8"),
+    await readText(join(repository.projectRoot, "README.md")),
     "recovered apply\n"
   );
   await undoManagedWorkspace(repository.storageRoot, workspace.id);
@@ -240,7 +244,7 @@ test("locks recovery instead of touching a mismatched repository", async (t) => 
   assert.equal(recovered[0].state, WORKSPACE_STATE.CONFLICT);
   assert.match(recovered[0].error, /manual inspection/);
   assert.equal(
-    await readFile(join(repository.projectRoot, "README.md"), "utf8"),
+    await readText(join(repository.projectRoot, "README.md")),
     "user work\n"
   );
 });
@@ -302,7 +306,7 @@ test("keeps agent-created commits visible and applies their files from the base 
   });
   await applyManagedWorkspace(repository.storageRoot, workspace.id);
   assert.equal(
-    await readFile(join(repository.projectRoot, "README.md"), "utf8"),
+    await readText(join(repository.projectRoot, "README.md")),
     "agent commit\n"
   );
 });
