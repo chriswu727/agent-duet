@@ -18,6 +18,13 @@ import {
   setReceiptProject
 } from "./receipt.mjs";
 import { runVerification } from "./verify.mjs";
+import {
+  createManagedWorkspace,
+  defaultWorkspaceStorageRoot,
+  markWorkspaceInterrupted,
+  markWorkspacePending,
+  workspaceSummary
+} from "./workspace.mjs";
 
 export const RUN_STATUS = Object.freeze({
   BLOCKED: "blocked",
@@ -65,18 +72,27 @@ const defaults = Object.freeze({
   createCodexSession: defaultCodexSession,
   createDeadline,
   createId: randomUUID,
+  createWorkspace: createManagedWorkspace,
   gitSnapshot,
+  markWorkspaceInterrupted,
+  markWorkspacePending,
   now: Date.now,
   probeCliHealth,
   repositoryHead,
   repositoryRoot,
   reviewWithClaude,
-  runVerification
+  runVerification,
+  summarizeWorkspace: workspaceSummary
 });
 
 export async function runDuet(
   rawConfig,
-  { dependencies: overrides = {}, onEvent = () => {}, signal } = {}
+  {
+    dependencies: overrides = {},
+    onEvent = () => {},
+    signal,
+    workspaceRoot = defaultWorkspaceStorageRoot()
+  } = {}
 ) {
   const dependencies = { ...defaults, ...overrides };
   const config = normalizeRunConfig(rawConfig);
@@ -92,11 +108,21 @@ export async function runDuet(
   let codex;
   let handoffChars = 0;
   let lastSnapshot;
+  let workspace;
 
-  const finish = (result) => ({
-    ...result,
-    receipt: finalizeReceipt(receipt, result, dependencies.now())
-  });
+  const finish = async (result) => {
+    const completed = {
+      ...result,
+      receipt: finalizeReceipt(receipt, result, dependencies.now())
+    };
+    if (workspace) {
+      completed.workspace = await dependencies.markWorkspacePending(
+        workspace,
+        completed
+      );
+    }
+    return completed;
+  };
 
   try {
     runSignal.throwIfAborted();
@@ -127,16 +153,28 @@ export async function runDuet(
       dependencies.gitSnapshot(root)
     ]);
     if (!initial.clean) {
-      throw new Error("Duet 0.1 requires a clean Git working tree to protect existing changes.");
+      throw new Error("Duet requires a clean Git working tree to protect existing changes.");
     }
     setReceiptProject(receipt, { baseCommit, root });
-    emit("preflight", { baseCommit, health, root });
+    workspace = await dependencies.createWorkspace({
+      baseCommit,
+      id: receipt.id,
+      projectRoot: root,
+      storageRoot: workspaceRoot
+    });
+    const runRoot = workspace.workspacePath;
+    emit("preflight", {
+      baseCommit,
+      health,
+      root,
+      workspace: dependencies.summarizeWorkspace(workspace)
+    });
     runSignal.throwIfAborted();
 
     codex = dependencies.createCodexSession({
       args: ["mcp-server", "-c", "mcp_servers={}"],
       command: health.codex.path,
-      cwd: root,
+      cwd: runRoot,
       name: "codex",
       onLog: (message) => emit("log", { agent: "codex", message })
     });
@@ -151,7 +189,7 @@ export async function runDuet(
         {
           "approval-policy": "never",
           "developer-instructions": LEAN_POLICY,
-          cwd: root,
+          cwd: runRoot,
           prompt: firstPrompt,
           sandbox: "workspace-write"
         },
@@ -166,11 +204,11 @@ export async function runDuet(
 
     for (let round = 1; round <= config.maxRounds; round += 1) {
       runSignal.throwIfAborted();
-      const snapshot = await dependencies.gitSnapshot(root);
+      const snapshot = await dependencies.gitSnapshot(runRoot, baseCommit);
       lastSnapshot = snapshot;
       const verification = await dependencies.runVerification(
         config.verificationCommand,
-        root,
+        runRoot,
         runSignal
       );
       emit("verification", {
@@ -191,7 +229,7 @@ export async function runDuet(
       handoffChars += reviewerPrompt.length;
       const reviewText = await dependencies.reviewWithClaude({
         command: health.claude.path,
-        cwd: root,
+        cwd: runRoot,
         model: config.reviewModel,
         onLog: (message) => emit("log", { agent: "claude", message }),
         prompt: reviewerPrompt,
@@ -215,7 +253,7 @@ export async function runDuet(
 
       const verificationPassed = !verification || verification.code === 0;
       if (review.verdict === "PASS" && verificationPassed) {
-        return finish({
+        return await finish({
           changedFiles: snapshot.changed,
           reason: STOP_REASON.VERIFIED,
           round,
@@ -223,7 +261,7 @@ export async function runDuet(
         });
       }
       if (review.verdict === "BLOCKED") {
-        return finish({
+        return await finish({
           changedFiles: snapshot.changed,
           detail: review.findings,
           reason: STOP_REASON.REVIEW_BLOCKED,
@@ -232,7 +270,7 @@ export async function runDuet(
         });
       }
       if (round === config.maxRounds) {
-        return finish({
+        return await finish({
           changedFiles: snapshot.changed,
           reason: STOP_REASON.ROUND_LIMIT,
           round,
@@ -242,7 +280,7 @@ export async function runDuet(
 
       const findingHash = digest(review.findings);
       if (previousFindingHash === findingHash) {
-        return finish({
+        return await finish({
           changedFiles: snapshot.changed,
           reason: STOP_REASON.REPEATED_FINDINGS,
           round,
@@ -271,10 +309,10 @@ export async function runDuet(
         text: capText(revision.content)
       });
 
-      const revisedSnapshot = await dependencies.gitSnapshot(root);
+      const revisedSnapshot = await dependencies.gitSnapshot(runRoot, baseCommit);
       lastSnapshot = revisedSnapshot;
       if (revisedSnapshot.hash === previousDiffHash) {
-        return finish({
+        return await finish({
           changedFiles: revisedSnapshot.changed,
           reason: STOP_REASON.NO_PROGRESS,
           round: round + 1,
@@ -283,7 +321,7 @@ export async function runDuet(
       }
     }
 
-    return finish({
+    return await finish({
       changedFiles: lastSnapshot?.changed || [],
       reason: STOP_REASON.ROUND_LIMIT,
       round: config.maxRounds,
@@ -291,13 +329,22 @@ export async function runDuet(
     });
   } catch (error) {
     if (runSignal.aborted) {
-      return finish({
+      return await finish({
         changedFiles: lastSnapshot?.changed || [],
         reason: deadline.signal.aborted
           ? STOP_REASON.TIME_LIMIT
           : STOP_REASON.USER_CANCELLED,
         status: RUN_STATUS.STOPPED
       });
+    }
+    if (workspace) {
+      await dependencies.markWorkspaceInterrupted(workspace, error).catch(
+        (stateError) =>
+          emit("log", {
+            agent: "duet",
+            message: `Could not persist workspace error state: ${stateError.message}`
+          })
+      );
     }
     throw error;
   } finally {

@@ -14,7 +14,7 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-40%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-50%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Build from source](#build-from-source)
@@ -51,10 +51,13 @@ collaboration inspectable, asymmetric, and finite.
 
 ```mermaid
 flowchart LR
-    U([Task + clean Git repo]) --> C[Codex<br/>implement]
+    U([Task + clean Git repo]) --> W[Create isolated<br/>Git worktree]
+    W --> C[Codex<br/>implement]
     C --> V[Run explicit<br/>verification]
     V --> R[Claude Code<br/>read-only review]
-    R -->|PASS + checks pass| D([Done])
+    R -->|PASS + checks pass| D[Review result]
+    D -->|Apply| A([Changes in original repo])
+    D -->|Discard| X([Original repo untouched])
     R -->|actionable findings| H[Compact handoff]
     H --> C2[Same Codex thread<br/>revise]
     C2 --> V
@@ -64,13 +67,17 @@ flowchart LR
 1. **Preflight** — confirm both CLIs are installed, subscription-backed sessions
    are active, required MCP and review-isolation options are available, and the
    selected Git working tree is clean.
-2. **Implement** — launch the official Codex stdio MCP server with workspace-write
-   sandboxing and no interactive approvals.
+2. **Isolate and implement** — create a detached managed Git worktree, then launch
+   the official Codex stdio MCP server there with workspace-write sandboxing and
+   no interactive approvals. The selected repository stays untouched.
 3. **Verify** — run the command you supplied, such as `pnpm test`.
 4. **Challenge** — launch a fresh Claude Code reviewer in plan mode with write,
    delegation, web, plugin, and nested MCP capabilities disabled.
 5. **Revise or stop** — send only valid findings to the same Codex thread. Stop as
    soon as the result passes or a deterministic stop condition fires.
+6. **Apply or discard** — inspect the changed-file list, then explicitly apply the
+   isolated result or discard it. An exact-state Undo remains available after
+   Apply until you edit, stage, or commit newer work.
 
 The compact implementation policy is inspired by
 [Ponytail](https://github.com/DietrichGebert/ponytail): understand first, reuse
@@ -101,7 +108,7 @@ you trust this repository.
 
 ### 3. Run one bounded collaboration
 
-1. Choose a **clean Git repository**. Duet 0.1 refuses dirty trees to avoid
+1. Choose a **clean Git repository**. Duet refuses dirty trees to avoid
    overwriting unrelated work.
 2. Write one concrete task.
 3. Optionally provide a verification command.
@@ -109,6 +116,8 @@ you trust this repository.
    model.
 5. Start. The run receipt shows phases, findings, verification, changed files,
    and the exact reason the loop stopped.
+6. Apply or discard the isolated result. Pending runs survive an app restart;
+   Duet never copies them into the original repository automatically.
 
 The default is 3 rounds and 60 minutes. These are per-run safety stops—not token
 quotas and not a statement about your remaining subscription capacity.
@@ -119,6 +128,10 @@ quotas and not a statement about your remaining subscription capacity.
 |---|---|
 | **Single writer** | Only Codex receives workspace-write access. Claude runs in plan mode. |
 | **Clean-tree gate** | A run refuses to start if Git already has tracked or untracked changes. |
+| **Isolated writes** | Codex and verification run in a managed detached worktree; the selected repository changes only after an explicit Apply. |
+| **Guarded Apply** | Apply requires the original repository to remain clean and at the exact base commit. |
+| **Exact-state Undo** | Undo runs only while the repository fingerprint exactly matches Duet's applied result; newer edits fail closed. |
+| **Crash recovery** | Active and mid-Apply manifests are persisted. Restart recovery applies only an exact content fingerprint and locks mismatches for manual inspection. |
 | **Credential isolation** | Child environments use an allowlist; OpenAI, Anthropic, and other provider API-key variables are omitted. |
 | **No nested agent loop** | Codex MCP servers are cleared; Claude plugins, skills, nested MCP, web access, delegation, and write tools are disabled. |
 | **Fail-closed review** | Missing or malformed reviewer verdicts become `BLOCKED`, never PASS. |
@@ -198,6 +211,7 @@ agent-duet/
 │   ├── stdio-transport.mjs # cross-platform MCP lifecycle and process-tree cleanup
 │   ├── claude.mjs          # isolated subscription-backed Claude reviewer
 │   ├── git.mjs             # clean-tree gate and progress snapshots
+│   ├── workspace.mjs       # managed worktrees, Apply/Discard, Undo, and recovery
 │   ├── prompts.mjs         # lean implementation and fail-closed review contract
 │   ├── receipt.mjs         # transcript-free, versioned run evidence
 │   └── process.mjs         # credential allowlist and child-process cleanup
@@ -207,11 +221,12 @@ agent-duet/
 
 ## Verification status
 
-- 40 offline tests cover configuration ceilings, environment scrubbing, CLI
+- 50 offline tests cover configuration ceilings, environment scrubbing, CLI
   discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
-  verification shells, process-tree cleanup, Claude isolation, reviewer parsing,
-  untracked-file progress hashing, Receipt v1, and the complete orchestrator
-  state machine including cleanup failures.
+  verification shells, process-tree cleanup, isolated-worktree Apply/Discard,
+  exact-state Undo, interrupted-Apply recovery, Claude isolation, reviewer
+  parsing, untracked-file progress hashing, Receipt v1, and the complete
+  orchestrator state machine including cleanup failures.
 - The guarded live smoke exists for explicit manual use and was not run while
   developing this release, so no subscription usage is claimed here.
 - The current v0.1.1 source packages successfully as a macOS arm64 `.app`.

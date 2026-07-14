@@ -71,8 +71,18 @@ function createHarness({
       if (connectError) throw connectError;
     }
   };
+  const workspace = {
+    baseCommit: "abc123",
+    id: "run-1",
+    projectRoot: "/repo",
+    state: "active",
+    workspacePath: "/workspace/run-1"
+  };
   const dependencies = {
-    createCodexSession: () => codex,
+    createCodexSession: (options) => {
+      codex.options = options;
+      return codex;
+    },
     createDeadline: () => ({
       dispose: () => {
         deadlineDisposed = true;
@@ -80,11 +90,27 @@ function createHarness({
       signal: deadlineController.signal
     }),
     createId: () => "run-1",
+    createWorkspace: async () => workspace,
     gitSnapshot: async () => {
       assert.ok(snapshotIndex < snapshots.length, "Unexpected Git snapshot request");
       return snapshots[snapshotIndex++];
     },
     now: () => now++,
+    markWorkspaceInterrupted: async (_workspace, error) => {
+      workspace.error = error.message;
+      workspace.state = "interrupted";
+    },
+    markWorkspacePending: async (_workspace, result) => {
+      workspace.changedFiles = result.changedFiles;
+      workspace.state = "pending";
+      return {
+        canApply: true,
+        changedFiles: result.changedFiles,
+        id: workspace.id,
+        projectRoot: workspace.projectRoot,
+        state: workspace.state
+      };
+    },
     probeCliHealth: async () => health,
     repositoryHead: async () => "abc123",
     repositoryRoot: async () => "/repo",
@@ -97,7 +123,12 @@ function createHarness({
       if (verificationError) throw verificationError;
       const index = Math.min(verificationIndex++, verifications.length - 1);
       return verifications[index];
-    }
+    },
+    summarizeWorkspace: () => ({
+      id: workspace.id,
+      projectRoot: workspace.projectRoot,
+      state: workspace.state
+    })
   };
 
   return {
@@ -108,7 +139,8 @@ function createHarness({
     get deadlineDisposed() {
       return deadlineDisposed;
     },
-    onEvent: (event) => events.push(event)
+    onEvent: (event) => events.push(event),
+    workspace
   };
 }
 
@@ -157,6 +189,8 @@ test("completes after a passing review and machine check", async () => {
   assert.equal(result.receipt.project.root, "/repo");
   assert.equal(result.receipt.rounds[0].review.verdict, "PASS");
   assert.equal(result.receipt.result.reason, STOP_REASON.VERIFIED);
+  assert.equal(result.workspace.state, "pending");
+  assert.equal(harness.codex.options.cwd, "/workspace/run-1");
 });
 
 test("does not let PASS override failed verification", async () => {
@@ -270,6 +304,8 @@ test("closes Codex and disposes the deadline when MCP connection fails", async (
   await assert.rejects(runDuet(config(), harness), /missing codex tool/);
   assert.equal(harness.codex.closed, true);
   assert.equal(harness.deadlineDisposed, true);
+  assert.equal(harness.workspace.state, "interrupted");
+  assert.equal(harness.workspace.error, "missing codex tool");
 });
 
 test("closes Codex when implementation fails", async () => {

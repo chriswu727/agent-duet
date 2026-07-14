@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { lstat, readlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { runProcess } from "./process.mjs";
 
-async function git(cwd, args, options = {}) {
+export async function runGit(cwd, args, options = {}) {
   const result = await runProcess("git", args, { cwd, ...options });
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || `git ${args.join(" ")} failed`);
@@ -12,44 +13,67 @@ async function git(cwd, args, options = {}) {
 }
 
 export async function repositoryRoot(cwd) {
-  return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
+  return (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim();
 }
 
 export async function repositoryHead(cwd) {
-  return (await git(cwd, ["rev-parse", "HEAD"])).trim();
+  return (await runGit(cwd, ["rev-parse", "HEAD"])).trim();
 }
 
-export async function gitSnapshot(cwd) {
+export async function gitSnapshot(cwd, baseRef = "HEAD") {
+  const head = await repositoryHead(cwd);
+  const baseCommit =
+    baseRef === "HEAD" ? head : (await runGit(cwd, ["rev-parse", baseRef])).trim();
   const [status, stat, names, patch, untrackedOutput] = await Promise.all([
-    git(cwd, ["status", "--short", "--untracked-files=all"]),
-    git(cwd, ["diff", "--stat", "HEAD"]),
-    git(cwd, ["diff", "--name-only", "HEAD"]),
-    git(cwd, ["diff", "--binary", "--no-ext-diff", "HEAD"], {
+    runGit(cwd, ["status", "--short", "--untracked-files=all"]),
+    runGit(cwd, ["diff", "--stat", baseCommit]),
+    runGit(cwd, ["diff", "--name-only", baseCommit]),
+    runGit(cwd, ["diff", "--binary", "--no-ext-diff", baseCommit], {
       maxOutputChars: 2_000_000
     }),
-    git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"], {
+    runGit(cwd, ["ls-files", "--others", "--exclude-standard", "-z"], {
       maxOutputChars: 2_000_000
     })
   ]);
+  const state = [
+    head === baseCommit
+      ? ""
+      : `Worktree HEAD ${head.slice(0, 12)} differs from base ${baseCommit.slice(0, 12)}.`,
+    status.trim()
+  ].filter(Boolean).join("\n");
   const untracked = untrackedOutput.split("\0").filter(Boolean).sort();
   const changed = [...new Set([...names.trim().split("\n").filter(Boolean), ...untracked])];
-  const hasher = createHash("sha256").update(status).update("\0").update(patch);
+  const contentHasher = createHash("sha256").update(patch);
   for (const path of untracked) {
-    hasher.update("\0").update(path).update("\0");
-    await new Promise((done, reject) => {
-      const stream = createReadStream(resolve(cwd, path));
-      stream.on("data", (chunk) => hasher.update(chunk));
-      stream.on("end", done);
-      stream.on("error", reject);
-    });
+    contentHasher.update("\0").update(path).update("\0");
+    const absolutePath = resolve(cwd, path);
+    const metadata = await lstat(absolutePath);
+    if (metadata.isSymbolicLink()) {
+      contentHasher.update("symlink\0").update(await readlink(absolutePath));
+    } else if (metadata.isFile()) {
+      await new Promise((done, reject) => {
+        const stream = createReadStream(absolutePath);
+        stream.on("data", (chunk) => contentHasher.update(chunk));
+        stream.on("end", done);
+        stream.on("error", reject);
+      });
+    } else {
+      throw new Error(`Duet cannot fingerprint untracked path type: ${path}`);
+    }
   }
-  const hash = hasher.digest("hex");
+  const contentHash = contentHasher.digest("hex");
+  const hash = createHash("sha256")
+    .update(state)
+    .update("\0")
+    .update(contentHash)
+    .digest("hex");
 
   return {
     changed,
-    clean: status.trim() === "",
+    clean: state === "",
+    contentHash,
     hash,
     stat: stat.trim() || "No tracked diff.",
-    status: status.trim() || "Clean working tree."
+    status: state || "Clean working tree."
   };
 }

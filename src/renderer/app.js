@@ -20,7 +20,10 @@ const elements = {
   task: document.querySelector("#task"),
   taskCount: document.querySelector("#task-count"),
   timeline: document.querySelector("#timeline"),
-  tokenMetric: document.querySelector("#token-metric")
+  tokenMetric: document.querySelector("#token-metric"),
+  workspaceList: document.querySelector("#workspace-queue"),
+  workspacePanel: document.querySelector("#workspace-queue-panel"),
+  workspaceStatus: document.querySelector("#workspace-status")
 };
 
 let running = false;
@@ -31,6 +34,130 @@ function setRunning(value) {
   elements.chooseProject.disabled = value;
   elements.refreshHealth.disabled = value;
   elements.cancel.classList.toggle("hidden", !value);
+  document.querySelectorAll("[data-workspace-action]").forEach((button) => {
+    button.disabled = value;
+  });
+}
+
+function repositoryName(path) {
+  return String(path).split(/[\\/]/).filter(Boolean).at(-1) || path;
+}
+
+function workspaceButton(label, action, id, className = "") {
+  const button = document.createElement("button");
+  button.className = `workspace-action ${className}`.trim();
+  button.dataset.workspaceAction = action;
+  button.dataset.workspaceId = id;
+  button.disabled = running;
+  button.textContent = label;
+  button.type = "button";
+  return button;
+}
+
+function renderWorkspaces(workspaces) {
+  elements.workspaceList.replaceChildren();
+  elements.workspacePanel.classList.toggle("hidden", workspaces.length === 0);
+  for (const workspace of workspaces) {
+    const item = document.createElement("li");
+    item.className = "workspace-item";
+    const top = document.createElement("div");
+    top.className = "workspace-item-top";
+    const name = document.createElement("strong");
+    name.textContent = repositoryName(workspace.projectRoot);
+    const state = document.createElement("span");
+    state.className = `run-state ${workspace.state === "applied" ? "completed" : "stopped"}`;
+    state.textContent = workspace.state;
+    top.append(name, state);
+
+    const summary = document.createElement("p");
+    summary.textContent = workspace.state === "applied"
+      ? "Changes are in the original repository. Undo remains available only while that exact state is untouched."
+      : "Changes remain outside the original repository and survive an app restart.";
+    item.append(top, summary);
+
+    if (workspace.error) {
+      const error = document.createElement("p");
+      error.textContent = workspace.error;
+      item.append(error);
+    }
+    if (workspace.changedFiles.length) {
+      const files = document.createElement("ul");
+      files.className = "workspace-files";
+      for (const path of workspace.changedFiles.slice(0, 8)) {
+        const file = document.createElement("li");
+        file.textContent = path;
+        files.append(file);
+      }
+      if (workspace.changedFiles.length > 8) {
+        const more = document.createElement("li");
+        more.textContent = `+ ${workspace.changedFiles.length - 8} more`;
+        files.append(more);
+      }
+      item.append(files);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "workspace-item-actions";
+    if (workspace.canApply) {
+      actions.append(
+        workspaceButton("Apply changes", "apply", workspace.id, "apply"),
+        workspaceButton("Discard", "discard", workspace.id, "destructive")
+      );
+    } else if (workspace.canUndo) {
+      actions.append(
+        workspaceButton("Undo apply", "undo", workspace.id, "destructive"),
+        workspaceButton("Keep changes", "finalize", workspace.id)
+      );
+    } else if (workspace.canDiscard) {
+      actions.append(
+        workspaceButton("Discard record", "discard", workspace.id, "destructive")
+      );
+    }
+    item.append(actions);
+    elements.workspaceList.append(item);
+  }
+}
+
+async function refreshWorkspaces() {
+  try {
+    renderWorkspaces(await window.duet.workspaces());
+  } catch (error) {
+    elements.workspacePanel.classList.remove("hidden");
+    elements.workspaceStatus.textContent = error.message;
+  }
+}
+
+async function runWorkspaceAction(action, id) {
+  const confirmations = {
+    discard: "Discard these isolated changes? This cannot be undone.",
+    finalize: "Keep the applied files and remove Duet's Undo record?",
+    undo: "Undo the applied files? Duet will proceed only if the repository is still an exact match."
+  };
+  if (confirmations[action] && !window.confirm(confirmations[action])) return;
+  const operations = {
+    apply: window.duet.applyWorkspace,
+    discard: window.duet.discardWorkspace,
+    finalize: window.duet.finalizeWorkspace,
+    undo: window.duet.undoWorkspace
+  };
+  document.querySelectorAll("[data-workspace-action]").forEach((button) => {
+    button.disabled = true;
+  });
+  elements.workspaceStatus.textContent = `${action[0].toUpperCase()}${action.slice(1)} in progress…`;
+  try {
+    const result = await operations[action](id);
+    const messages = {
+      applied: "Changes applied to the original repository. Undo is available until you edit or commit.",
+      discarded: "Isolated changes discarded. The original repository was not modified.",
+      finalized: "Applied changes kept. The Undo record was removed.",
+      undone: "Applied changes were undone and the original repository is clean."
+    };
+    elements.formMessage.textContent = messages[result.state] || "Workspace updated.";
+    elements.workspaceStatus.textContent = "";
+  } catch (error) {
+    elements.workspaceStatus.textContent = error.message;
+  }
+  await refreshWorkspaces();
 }
 
 function setRunState(state, title) {
@@ -145,12 +272,13 @@ function finishRun(payload) {
   setRunState(state, titles[state]);
   elements.fileMetric.textContent = String(payload.changedFiles?.length ?? 0);
   elements.formMessage.textContent = payload.status === "completed"
-    ? "The requested checks and independent review passed."
+    ? "Review passed. Apply or discard the isolated changes above."
     : `Stopped: ${reason.replaceAll("_", " ")}`;
   addEvent({
     body: String(payload.detail || reason),
     title: titles[state]
   });
+  refreshWorkspaces();
 }
 
 window.duet.onEvent((event) => {
@@ -159,7 +287,11 @@ window.duet.onEvent((event) => {
     setRunState("running", payload.message);
     addEvent({ body: payload.message, title: payload.name || "Phase", time: event.time });
   } else if (event.type === "preflight") {
-    addEvent({ body: payload.root, title: "Preflight passed", time: event.time });
+    addEvent({
+      body: `${payload.root}\nChanges are isolated until you choose Apply.`,
+      title: "Preflight passed",
+      time: event.time
+    });
   } else if (event.type === "agent") {
     elements.roundMetric.textContent = String(payload.round);
     addEvent({
@@ -189,6 +321,10 @@ window.duet.onEvent((event) => {
     setRunState("error", "Run failed");
     elements.formMessage.textContent = payload.message;
     addEvent({ body: payload.message, title: "Error", time: event.time });
+    refreshWorkspaces();
+  } else if (event.type === "recovery-error") {
+    elements.workspacePanel.classList.remove("hidden");
+    elements.workspaceStatus.textContent = payload.message;
   }
 });
 
@@ -204,6 +340,10 @@ elements.cancel.addEventListener("click", async () => {
 });
 
 elements.refreshHealth.addEventListener("click", refreshHealth);
+elements.workspaceList.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-workspace-action]");
+  if (button) runWorkspaceAction(button.dataset.workspaceAction, button.dataset.workspaceId);
+});
 elements.task.addEventListener("input", () => {
   elements.taskCount.textContent = `${elements.task.value.length.toLocaleString()} / 12,000`;
 });
@@ -231,3 +371,4 @@ elements.form.addEventListener("submit", async (event) => {
 });
 
 refreshHealth();
+refreshWorkspaces();
