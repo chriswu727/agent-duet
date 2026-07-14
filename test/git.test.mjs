@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import test from "node:test";
 import { gitSnapshot, repositoryRoot } from "../src/core/git.mjs";
 import { runProcess } from "../src/core/process.mjs";
@@ -20,7 +20,10 @@ test("snapshot changes when untracked file content changes", async () => {
     await writeFile(join(directory, "README.md"), "base\n");
     await git(directory, "add", "README.md");
     await git(directory, "commit", "-qm", "initial");
-    assert.equal(await repositoryRoot(directory), await realpath(directory));
+    assert.equal(
+      normalize(await repositoryRoot(directory)),
+      normalize(await realpath(directory))
+    );
 
     await writeFile(join(directory, "new.txt"), "one\n");
     const first = await gitSnapshot(directory);
