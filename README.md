@@ -14,7 +14,7 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-63%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-72%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Build from source](#build-from-source)
@@ -121,6 +121,12 @@ you trust this repository.
 6. Apply or discard the isolated result. Pending runs survive an app restart;
    Duet never copies them into the original repository automatically.
 
+The first-run guide explains these boundaries before any model can be called.
+Use **Settings** to save run defaults; Duet stores the default rounds, time,
+reviewer model, and verification command, but does not remember task text or a
+repository path. Use **Inspect diff** on an isolated workspace before deciding to
+Apply, Discard, or Undo.
+
 The 100 most recent completed, stopped, blocked, or failed run receipts are kept
 in Duet's local app-data folder and can be reopened from **Local history**. A
 receipt includes the task, repository path, base commit, structured findings,
@@ -138,6 +144,7 @@ quotas and not a statement about your remaining subscription capacity.
 | **Clean-tree gate** | A run refuses to start if Git already has tracked or untracked changes. |
 | **Isolated writes** | Codex and verification run in a managed detached worktree; the selected repository changes only after an explicit Apply. |
 | **Guarded Apply** | Apply requires the original repository to remain clean and at the exact base commit. |
+| **Read-only diff preview** | The Apply/Undo decision includes a capped, no-color unified diff built from exact Git trees, including formerly untracked files. The complete tree—not the capped display—is transferred on Apply. |
 | **Exact-state Undo** | Undo runs only while the repository fingerprint exactly matches Duet's applied result; newer edits fail closed. |
 | **Crash recovery** | Active and mid-Apply manifests are persisted. Restart recovery applies only an exact content fingerprint and locks mismatches for manual inspection. |
 | **Credential isolation** | Child environments use an allowlist; OpenAI, Anthropic, and other provider API-key variables are omitted. |
@@ -148,6 +155,7 @@ quotas and not a statement about your remaining subscription capacity.
 | **Bounded output** | Agent output and cross-agent findings are capped before display or handoff. |
 | **Bounded retry** | Only an explicitly transient Claude read-only review may retry, once. Codex write calls, timeouts, protocol failures, and permanent failures are never replayed automatically. |
 | **Stable errors** | Failures carry a durable code, category, phase, and retryability flag for diagnosis without exposing child-process causes. |
+| **Private preferences** | Settings are schema-validated, atomically replaced, and stored with private file permissions. Invalid settings are quarantined and safe defaults are restored. |
 | **Versioned history** | Receipt v2 records the base commit, structured findings, diff hashes, check outcomes, retries, errors, and stable stop reason without storing agent transcripts. The newest 100 are written atomically with private local permissions. |
 | **Process cleanup** | Cancel and timeout terminate Unix process groups or Windows process trees, with a forced cleanup fallback. |
 | **Desktop hardening** | Electron uses context isolation, renderer sandboxing, a narrow preload bridge, CSP, denied permissions, and blocked navigation. |
@@ -225,6 +233,7 @@ agent-duet/
 │   ├── git.mjs             # clean-tree gate and progress snapshots
 │   ├── workspace.mjs       # managed worktrees, Apply/Discard, Undo, and recovery
 │   ├── history.mjs         # private atomic receipt storage and retention
+│   ├── settings.mjs        # schema-validated local defaults and recovery
 │   ├── prompts.mjs         # lean implementation and fail-closed review contract
 │   ├── receipt.mjs         # transcript-free, versioned run evidence
 │   └── process.mjs         # credential allowlist and child-process cleanup
@@ -234,13 +243,14 @@ agent-duet/
 
 ## Verification status
 
-- 63 offline tests cover configuration ceilings, environment scrubbing, CLI
+- 72 offline tests cover configuration ceilings, environment scrubbing, CLI
   discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
   verification shells, process-tree cleanup, isolated-worktree Apply/Discard,
   exact-state Undo, interrupted-Apply recovery, Claude isolation, structured
   reviewer invariants, retry boundaries, untracked-file progress hashing,
-  private receipt history, Receipt v2, and the complete orchestrator state
-  machine including classified failures.
+  private receipt history, settings recovery, capped exact-tree diff previews,
+  renderer labelling and injection guards, Receipt v2, and the complete
+  orchestrator state machine including classified failures.
 - The guarded live smoke exists for explicit manual use and was not run while
   developing this release, so no subscription usage is claimed here.
 - The current v0.1.1 source packages successfully as a macOS arm64 `.app`.

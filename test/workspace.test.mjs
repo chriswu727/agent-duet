@@ -19,6 +19,7 @@ import {
   markWorkspacePending,
   recoverManagedWorkspaces,
   undoManagedWorkspace,
+  workspaceDiff,
   WORKSPACE_STATE
 } from "../src/core/workspace.mjs";
 
@@ -64,10 +65,20 @@ test("keeps changes isolated, applies them, and undoes an exact applied state", 
   const pending = await listManagedWorkspaces(repository.storageRoot);
   assert.equal(pending[0].state, WORKSPACE_STATE.PENDING);
   assert.equal(pending[0].canApply, true);
+  assert.equal(pending[0].canPreview, true);
+
+  const pendingDiff = await workspaceDiff(repository.storageRoot, workspace.id);
+  assert.deepEqual(pendingDiff.changedFiles, ["README.md", "binary.dat"]);
+  assert.match(pendingDiff.patch, /diff --git a\/README\.md b\/README\.md/);
+  assert.match(pendingDiff.patch, /binary\.dat/);
+  assert.equal(pendingDiff.truncated, false);
+  assert.equal((await gitSnapshot(repository.projectRoot)).clean, true);
 
   const applied = await applyManagedWorkspace(repository.storageRoot, workspace.id);
   assert.equal(applied.state, WORKSPACE_STATE.APPLIED);
   assert.equal(applied.canUndo, true);
+  const appliedDiff = await workspaceDiff(repository.storageRoot, workspace.id);
+  assert.equal(appliedDiff.patch, pendingDiff.patch);
   assert.equal(await readText(join(repository.projectRoot, "README.md")), "changed\n");
   assert.deepEqual(
     await readFile(join(repository.projectRoot, "binary.dat")),
@@ -79,6 +90,29 @@ test("keeps changes isolated, applies them, and undoes an exact applied state", 
   await assert.rejects(readFile(join(repository.projectRoot, "binary.dat")), /ENOENT/);
   assert.equal((await gitSnapshot(repository.projectRoot)).clean, true);
   assert.deepEqual(await listManagedWorkspaces(repository.storageRoot), []);
+});
+
+test("caps a large diff preview from the beginning without touching the repository", async (t) => {
+  const repository = await createRepository(t);
+  const workspace = await createManagedWorkspace({
+    ...repository,
+    id: "large-preview"
+  });
+  const lines = Array.from({ length: 20_000 }, (_, index) =>
+    `${String(index).padStart(5, "0")} ${"x".repeat(20)}`
+  );
+  await writeFile(join(workspace.workspacePath, "large.txt"), `${lines.join("\n")}\n`);
+  await markWorkspacePending(workspace, {
+    changedFiles: ["large.txt"],
+    status: "completed"
+  });
+
+  const preview = await workspaceDiff(repository.storageRoot, workspace.id);
+  assert.equal(preview.truncated, true);
+  assert.match(preview.patch, /\+00000 x+/);
+  assert.doesNotMatch(preview.patch, /\+19999 x+/);
+  assert.equal((await gitSnapshot(repository.projectRoot)).clean, true);
+  await discardManagedWorkspace(repository.storageRoot, workspace.id);
 });
 
 test("recovers an interrupted run and discards it without touching the repository", async (t) => {

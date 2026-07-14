@@ -43,6 +43,11 @@ button:disabled {
   opacity: 0.48;
 }
 
+:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
 .ambient {
   border-radius: 999px;
   filter: blur(100px);
@@ -87,6 +92,11 @@ footer {
 
 .masthead {
   margin-bottom: 25px;
+}
+
+.masthead-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .wordmark {
@@ -640,6 +650,23 @@ fieldset legend {
   white-space: pre-wrap;
 }
 
+.log-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.log-actions button {
+  font-size: 10px;
+  padding: 6px 9px;
+}
+
+#copy-status {
+  color: var(--muted);
+  font-size: 9px;
+}
+
 .history-panel {
   background: rgba(18, 21, 24, 0.72);
   border: 1px solid var(--line);
@@ -732,6 +759,174 @@ fieldset legend {
   margin: 8px 0 0;
 }
 
+.modal {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  max-height: calc(100vh - 48px);
+  max-width: min(680px, calc(100vw - 48px));
+  padding: 0;
+  width: 100%;
+}
+
+.modal::backdrop {
+  backdrop-filter: blur(10px);
+  background: rgba(3, 5, 7, 0.78);
+}
+
+.modal-content {
+  background: #121519;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 17px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  margin: 0;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 26px;
+}
+
+.modal-header,
+.modal-actions {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.modal-intro,
+.diff-note,
+.modal-actions p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.modal-intro {
+  margin: 10px 0 18px;
+}
+
+.dialog-close {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #bdc4cb;
+  font-size: 20px;
+  height: 34px;
+  line-height: 1;
+  width: 34px;
+}
+
+.onboarding-steps {
+  display: grid;
+  gap: 9px;
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+}
+
+.onboarding-steps li {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+}
+
+.onboarding-steps strong {
+  font-size: 11px;
+}
+
+.onboarding-steps span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.modal-actions {
+  gap: 10px;
+}
+
+.modal-actions p {
+  flex: 1;
+  margin: 0;
+}
+
+.dialog-settings-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.dialog-settings-grid label,
+.dialog-field {
+  color: #cbd0d5;
+  display: grid;
+  font-size: 10px;
+  font-weight: 680;
+  gap: 7px;
+}
+
+.dialog-field {
+  margin: 16px 0 21px;
+}
+
+.dialog-field input,
+.dialog-settings-grid select {
+  width: 100%;
+}
+
+.diff-modal {
+  max-width: min(980px, calc(100vw - 48px));
+}
+
+.diff-stat,
+.diff-patch {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.diff-stat {
+  color: #aab2ba;
+  font-size: 10px;
+  margin: 16px 0 10px;
+}
+
+.diff-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diff-files li {
+  background: rgba(147, 239, 189, 0.07);
+  border: 1px solid rgba(147, 239, 189, 0.14);
+  border-radius: 6px;
+  color: #a8d5bd;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  padding: 4px 6px;
+}
+
+.diff-note {
+  margin: 10px 0;
+}
+
+.diff-patch {
+  background: #0b0e11;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #b4bbc2;
+  font-size: 10px;
+  line-height: 1.55;
+  margin: 0;
+  max-height: 56vh;
+  overflow: auto;
+  padding: 14px;
+}
+
 footer {
   color: #59616a;
   font-size: 10px;
@@ -761,5 +956,23 @@ footer {
   .masthead p,
   footer span:last-child {
     display: none;
+  }
+
+  .dialog-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
