@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Duet</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <div class="wordmark"><span class="mark">D</span> Duet</div>
+          <p>Codex builds. Claude challenges. Your subscriptions stay local.</p>
+        </div>
+        <button class="quiet-button" id="refresh-health" type="button">Recheck CLIs</button>
+      </header>
+
+      <section class="health-grid" aria-label="CLI subscription status">
+        <article class="health-card" id="codex-card">
+          <div class="agent-icon codex-icon">C</div>
+          <div>
+            <div class="health-title"><strong>Codex</strong><span class="pill pending" id="codex-pill">Checking</span></div>
+            <p id="codex-detail">Looking for the local Codex CLI…</p>
+          </div>
+        </article>
+        <article class="health-card" id="claude-card">
+          <div class="agent-icon claude-icon">A</div>
+          <div>
+            <div class="health-title"><strong>Claude Code</strong><span class="pill pending" id="claude-pill">Checking</span></div>
+            <p id="claude-detail">Looking for the local Claude Code CLI…</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <form class="composer" id="run-form">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">New run</span>
+              <h1>Give the pair one concrete job.</h1>
+            </div>
+            <span class="local-badge">Local only</span>
+          </div>
+
+          <label for="project-path">Repository</label>
+          <div class="path-picker">
+            <input id="project-path" name="projectPath" placeholder="Choose a clean Git repository" readonly required>
+            <button class="secondary-button" id="choose-project" type="button">Choose folder</button>
+          </div>
+
+          <label for="task">Task</label>
+          <textarea
+            id="task"
+            maxlength="12000"
+            name="task"
+            placeholder="Example: Fix the broken settings save flow and add the smallest relevant regression test."
+            required
+            rows="7"
+          ></textarea>
+          <div class="input-note"><span>Codex receives the task. Claude receives the task plus a compact diff summary.</span><span id="task-count">0 / 12,000</span></div>
+
+          <label for="verification-command">Verification command <span class="optional">optional</span></label>
+          <input
+            id="verification-command"
+            name="verificationCommand"
+            placeholder="pnpm test"
+            spellcheck="false"
+          >
+
+          <fieldset>
+            <legend>Safety stops</legend>
+            <p class="fieldset-copy">These bound one collaboration run. They are not subscription or token limits.</p>
+            <div class="settings-grid">
+              <label class="setting" for="max-rounds">
+                <span>Review rounds</span>
+                <select id="max-rounds" name="maxRounds">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                </select>
+              </label>
+              <label class="setting" for="max-minutes">
+                <span>Time ceiling</span>
+                <select id="max-minutes" name="maxMinutes">
+                  <option value="10">10 min</option>
+                  <option value="30">30 min</option>
+                  <option value="60" selected>60 min</option>
+                  <option value="90">90 min</option>
+                  <option value="120">120 min</option>
+                </select>
+              </label>
+              <label class="setting" for="review-model">
+                <span>Claude reviewer</span>
+                <select id="review-model" name="reviewModel">
+                  <option value="sonnet" selected>Sonnet</option>
+                  <option value="opus">Opus</option>
+                  <option value="haiku">Haiku</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <button class="primary-button" id="start-run" type="submit">Start collaboration <span>→</span></button>
+            <button class="danger-button hidden" id="cancel-run" type="button">Stop safely</button>
+            <p id="form-message" role="status"></p>
+          </div>
+        </form>
+
+        <aside class="run-panel" aria-live="polite">
+          <div class="run-header">
+            <div>
+              <span class="eyebrow">Run receipt</span>
+              <h2 id="run-title">Ready when you are</h2>
+            </div>
+            <span class="run-state idle" id="run-state">Idle</span>
+          </div>
+
+          <div class="metrics">
+            <div><strong id="round-metric">—</strong><span>round</span></div>
+            <div><strong id="file-metric">—</strong><span>changed files</span></div>
+            <div><strong id="token-metric">—</strong><span>handoff est.</span></div>
+          </div>
+          <p class="capacity-note">Handoff estimate ≠ account usage or remaining subscription capacity.</p>
+
+          <ol class="timeline" id="timeline">
+            <li class="empty-event">Events from Codex, Claude, and verification will appear here.</li>
+          </ol>
+
+          <details class="logs">
+            <summary>CLI diagnostics</summary>
+            <pre id="log-output">No diagnostics yet.</pre>
+          </details>
+        </aside>
+      </section>
+
+      <footer>
+        <span>No API keys. No hosted proxy. No recursive agent loop.</span>
+        <span>Only Codex can write files.</span>
+      </footer>
+    </main>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

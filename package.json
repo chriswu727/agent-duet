@@ -1,0 +1,61 @@
+{
+  "name": "agent-duet",
+  "version": "0.1.0",
+  "description": "A bounded local collaboration app for Codex and Claude Code.",
+  "author": "Yichen",
+  "private": true,
+  "homepage": "https://github.com/chriswu727/agent-duet#readme",
+  "bugs": {
+    "url": "https://github.com/chriswu727/agent-duet/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chriswu727/agent-duet.git"
+  },
+  "type": "module",
+  "main": "src/main.mjs",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "pack": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "dev.agentduet.app",
+    "productName": "Duet",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "README.md",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "linux": {
+      "category": "Development",
+      "target": ["AppImage"]
+    }
+  }
+}
