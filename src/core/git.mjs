@@ -15,6 +15,10 @@ export async function repositoryRoot(cwd) {
   return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
 }
 
+export async function repositoryHead(cwd) {
+  return (await git(cwd, ["rev-parse", "HEAD"])).trim();
+}
+
 export async function gitSnapshot(cwd) {
   const [status, stat, names, patch, untrackedOutput] = await Promise.all([
     git(cwd, ["status", "--short", "--untracked-files=all"]),

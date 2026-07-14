@@ -14,7 +14,7 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-13%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-29%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Build from source](#build-from-source)
@@ -124,6 +124,7 @@ quotas and not a statement about your remaining subscription capacity.
 | **Machine check wins** | Claude cannot PASS a non-zero verification result. |
 | **Progress detection** | Duet hashes tracked diffs and untracked contents; an unchanged revision stops the loop. |
 | **Bounded output** | Agent output and cross-agent findings are capped before display or handoff. |
+| **Versioned receipt** | Receipt v1 records the base commit, diff hashes, verdicts, check outcomes, and stable stop reason without storing agent transcripts. |
 | **Process cleanup** | Cancel and timeout terminate child process groups, with a forced cleanup fallback. |
 | **Desktop hardening** | Electron uses context isolation, renderer sandboxing, a narrow preload bridge, CSP, denied permissions, and blocked navigation. |
 
@@ -158,6 +159,18 @@ pnpm check
 pnpm test
 ```
 
+These checks never call either model. A real end-to-end smoke is intentionally
+separate and refuses to start unless both consent values are present:
+
+```bash
+DUET_LIVE_SMOKE=1 \
+DUET_LIVE_SMOKE_CONFIRM=I_ACCEPT_SUBSCRIPTION_USAGE \
+pnpm smoke:live
+```
+
+That command creates a disposable Git repository and invokes both local
+subscription sessions once. It is not part of CI or the default test suite.
+
 Build an installer for the current platform:
 
 ```bash
@@ -182,6 +195,7 @@ agent-duet/
 │   ├── claude.mjs          # isolated subscription-backed Claude reviewer
 │   ├── git.mjs             # clean-tree gate and progress snapshots
 │   ├── prompts.mjs         # lean implementation and fail-closed review contract
+│   ├── receipt.mjs         # transcript-free, versioned run evidence
 │   └── process.mjs         # credential allowlist and child-process cleanup
 ├── test/                   # offline unit and temporary-Git integration tests
 └── .github/workflows/      # CI and cross-platform release builds
@@ -189,10 +203,14 @@ agent-duet/
 
 ## Verification status
 
-- 13 offline tests cover configuration ceilings, environment scrubbing, Claude
-  isolation, reviewer parsing, and untracked-file progress hashing.
-- The packaged macOS arm64 app has been launched and its renderer window verified.
-- Generated DMG and ZIP archives pass `hdiutil verify` and `unzip -t` locally.
+- 29 offline tests cover configuration ceilings, environment scrubbing, Claude
+  isolation, reviewer parsing, untracked-file progress hashing, Receipt v1, and
+  the complete orchestrator state machine including cleanup failures.
+- The guarded live smoke exists for explicit manual use and was not run while
+  developing this release, so no subscription usage is claimed here.
+- The current v0.1.1 source packages successfully as a macOS arm64 `.app`.
+- The published v0.1.0 macOS arm64 app was launched and its renderer verified;
+  its DMG and ZIP also passed `hdiutil verify` and `unzip -t` locally.
 - Windows, Linux, macOS x64, signing, and notarization rely on GitHub runners or
   platform credentials and are not claimed as locally verified.
 

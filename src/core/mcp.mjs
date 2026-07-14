@@ -6,7 +6,7 @@ export class McpSession {
   constructor({ args, command, cwd, name, onLog }) {
     this.onLog = onLog;
     this.client = new Client(
-      { name: `duet-${name}`, version: "0.1.0" },
+      { name: `duet-${name}`, version: "0.1.1" },
       { capabilities: {} }
     );
     this.transport = new StdioClientTransport({

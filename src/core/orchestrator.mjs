@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { reviewWithClaude } from "./claude.mjs";
 import { probeCliHealth } from "./health.mjs";
-import { gitSnapshot, repositoryRoot } from "./git.mjs";
+import { gitSnapshot, repositoryHead, repositoryRoot } from "./git.mjs";
 import { capText, estimateTokens, HARD_LIMITS, normalizeRunConfig } from "./limits.mjs";
 import { codexToolResult, McpSession } from "./mcp.mjs";
 import {
@@ -11,10 +11,44 @@ import {
   reviewPrompt,
   revisionPrompt
 } from "./prompts.mjs";
+import {
+  beginReceipt,
+  finalizeReceipt,
+  recordReceiptRound,
+  setReceiptProject
+} from "./receipt.mjs";
 import { runVerification } from "./verify.mjs";
+
+export const RUN_STATUS = Object.freeze({
+  BLOCKED: "blocked",
+  COMPLETED: "completed",
+  STOPPED: "stopped"
+});
+
+export const STOP_REASON = Object.freeze({
+  NO_PROGRESS: "no_progress",
+  REPEATED_FINDINGS: "repeated_findings",
+  REVIEW_BLOCKED: "review_blocked",
+  ROUND_LIMIT: "round_limit",
+  TIME_LIMIT: "time_limit",
+  USER_CANCELLED: "user_cancelled",
+  VERIFIED: "verified"
+});
 
 function digest(text) {
   return createHash("sha256").update(String(text || "").trim()).digest("hex");
+}
+
+function createDeadline(maxMinutes) {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Duet reached the ${maxMinutes}-minute limit.`)),
+    maxMinutes * 60_000
+  );
+  return {
+    dispose: () => clearTimeout(timer),
+    signal: controller.signal
+  };
 }
 
 function combinedSignal(userSignal, deadlineSignal) {
@@ -23,21 +57,51 @@ function combinedSignal(userSignal, deadlineSignal) {
     : deadlineSignal;
 }
 
-export async function runDuet(rawConfig, { onEvent = () => {}, signal }) {
+function defaultCodexSession(options) {
+  return new McpSession(options);
+}
+
+const defaults = Object.freeze({
+  createCodexSession: defaultCodexSession,
+  createDeadline,
+  createId: randomUUID,
+  gitSnapshot,
+  now: Date.now,
+  probeCliHealth,
+  repositoryHead,
+  repositoryRoot,
+  reviewWithClaude,
+  runVerification
+});
+
+export async function runDuet(
+  rawConfig,
+  { dependencies: overrides = {}, onEvent = () => {}, signal } = {}
+) {
+  const dependencies = { ...defaults, ...overrides };
   const config = normalizeRunConfig(rawConfig);
-  const deadline = new AbortController();
-  const timer = setTimeout(
-    () => deadline.abort(new Error(`Duet reached the ${config.maxMinutes}-minute limit.`)),
-    config.maxMinutes * 60_000
-  );
+  const deadline = dependencies.createDeadline(config.maxMinutes);
   const runSignal = combinedSignal(signal, deadline.signal);
-  const emit = (type, payload = {}) => onEvent({ payload, time: Date.now(), type });
+  const emit = (type, payload = {}) =>
+    onEvent({ payload, time: dependencies.now(), type });
+  const receipt = beginReceipt({
+    config,
+    id: dependencies.createId(),
+    now: dependencies.now()
+  });
   let codex;
   let handoffChars = 0;
+  let lastSnapshot;
+
+  const finish = (result) => ({
+    ...result,
+    receipt: finalizeReceipt(receipt, result, dependencies.now())
+  });
 
   try {
+    runSignal.throwIfAborted();
     emit("phase", { name: "preflight", message: "Checking CLIs, subscriptions, and Git." });
-    const health = await probeCliHealth();
+    const health = await dependencies.probeCliHealth();
     if (!health.codex.subscription) {
       throw new Error("Codex must be installed and logged in using ChatGPT.");
     }
@@ -45,14 +109,19 @@ export async function runDuet(rawConfig, { onEvent = () => {}, signal }) {
       throw new Error("Claude Code must be installed and logged in using Claude.ai.");
     }
 
-    const root = await repositoryRoot(config.projectPath);
-    const initial = await gitSnapshot(root);
+    const root = await dependencies.repositoryRoot(config.projectPath);
+    const [baseCommit, initial] = await Promise.all([
+      dependencies.repositoryHead(root),
+      dependencies.gitSnapshot(root)
+    ]);
     if (!initial.clean) {
       throw new Error("Duet 0.1 requires a clean Git working tree to protect existing changes.");
     }
-    emit("preflight", { health, root });
+    setReceiptProject(receipt, { baseCommit, root });
+    emit("preflight", { baseCommit, health, root });
+    runSignal.throwIfAborted();
 
-    codex = new McpSession({
+    codex = dependencies.createCodexSession({
       args: ["mcp-server", "-c", "mcp_servers={}"],
       command: health.codex.path,
       cwd: root,
@@ -80,14 +149,14 @@ export async function runDuet(rawConfig, { onEvent = () => {}, signal }) {
     if (!first.threadId) throw new Error("Codex did not return a threadId.");
     emit("agent", { agent: "codex", round: 1, text: capText(first.content) });
 
-    let previousDiffHash = null;
-    let previousFindingHash = null;
-    let finalSnapshot = null;
+    let previousDiffHash;
+    let previousFindingHash;
 
     for (let round = 1; round <= config.maxRounds; round += 1) {
       runSignal.throwIfAborted();
-      const snapshot = await gitSnapshot(root);
-      const verification = await runVerification(
+      const snapshot = await dependencies.gitSnapshot(root);
+      lastSnapshot = snapshot;
+      const verification = await dependencies.runVerification(
         config.verificationCommand,
         root,
         runSignal
@@ -108,7 +177,7 @@ export async function runDuet(rawConfig, { onEvent = () => {}, signal }) {
         verification
       });
       handoffChars += reviewerPrompt.length;
-      const reviewText = await reviewWithClaude({
+      const reviewText = await dependencies.reviewWithClaude({
         command: health.claude.path,
         cwd: root,
         model: config.reviewModel,
@@ -117,6 +186,7 @@ export async function runDuet(rawConfig, { onEvent = () => {}, signal }) {
         signal: runSignal
       });
       const review = parseReview(reviewText);
+      recordReceiptRound(receipt, { review, round, snapshot, verification });
       emit("agent", {
         agent: "claude",
         round,
@@ -133,42 +203,39 @@ export async function runDuet(rawConfig, { onEvent = () => {}, signal }) {
 
       const verificationPassed = !verification || verification.code === 0;
       if (review.verdict === "PASS" && verificationPassed) {
-        finalSnapshot = snapshot;
-        return {
+        return finish({
           changedFiles: snapshot.changed,
-          reason: "verified",
+          reason: STOP_REASON.VERIFIED,
           round,
-          status: "completed"
-        };
+          status: RUN_STATUS.COMPLETED
+        });
       }
       if (review.verdict === "BLOCKED") {
-        finalSnapshot = snapshot;
-        return {
+        return finish({
           changedFiles: snapshot.changed,
-          reason: review.findings,
+          detail: review.findings,
+          reason: STOP_REASON.REVIEW_BLOCKED,
           round,
-          status: "blocked"
-        };
+          status: RUN_STATUS.BLOCKED
+        });
       }
       if (round === config.maxRounds) {
-        finalSnapshot = snapshot;
-        return {
+        return finish({
           changedFiles: snapshot.changed,
-          reason: "round_limit",
+          reason: STOP_REASON.ROUND_LIMIT,
           round,
-          status: "stopped"
-        };
+          status: RUN_STATUS.STOPPED
+        });
       }
 
       const findingHash = digest(review.findings);
       if (previousFindingHash === findingHash) {
-        finalSnapshot = snapshot;
-        return {
+        return finish({
           changedFiles: snapshot.changed,
-          reason: "repeated_findings",
+          reason: STOP_REASON.REPEATED_FINDINGS,
           round,
-          status: "stopped"
-        };
+          status: RUN_STATUS.STOPPED
+        });
       }
       previousFindingHash = findingHash;
       previousDiffHash = snapshot.hash;
@@ -192,31 +259,37 @@ export async function runDuet(rawConfig, { onEvent = () => {}, signal }) {
         text: capText(revision.content)
       });
 
-      const revisedSnapshot = await gitSnapshot(root);
+      const revisedSnapshot = await dependencies.gitSnapshot(root);
+      lastSnapshot = revisedSnapshot;
       if (revisedSnapshot.hash === previousDiffHash) {
-        finalSnapshot = revisedSnapshot;
-        return {
+        return finish({
           changedFiles: revisedSnapshot.changed,
-          reason: "no_progress",
+          reason: STOP_REASON.NO_PROGRESS,
           round: round + 1,
-          status: "stopped"
-        };
+          status: RUN_STATUS.STOPPED
+        });
       }
     }
 
-    return {
-      changedFiles: finalSnapshot?.changed || [],
-      reason: "round_limit",
+    return finish({
+      changedFiles: lastSnapshot?.changed || [],
+      reason: STOP_REASON.ROUND_LIMIT,
       round: config.maxRounds,
-      status: "stopped"
-    };
+      status: RUN_STATUS.STOPPED
+    });
   } catch (error) {
     if (runSignal.aborted) {
-      return { changedFiles: [], reason: "cancelled_or_timed_out", status: "stopped" };
+      return finish({
+        changedFiles: lastSnapshot?.changed || [],
+        reason: deadline.signal.aborted
+          ? STOP_REASON.TIME_LIMIT
+          : STOP_REASON.USER_CANCELLED,
+        status: RUN_STATUS.STOPPED
+      });
     }
     throw error;
   } finally {
-    clearTimeout(timer);
+    deadline.dispose();
     await codex?.close();
   }
 }
