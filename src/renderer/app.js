@@ -10,6 +10,8 @@ const elements = {
   fileMetric: document.querySelector("#file-metric"),
   form: document.querySelector("#run-form"),
   formMessage: document.querySelector("#form-message"),
+  historyList: document.querySelector("#history-list"),
+  historyStatus: document.querySelector("#history-status"),
   log: document.querySelector("#log-output"),
   projectPath: document.querySelector("#project-path"),
   refreshHealth: document.querySelector("#refresh-health"),
@@ -35,6 +37,9 @@ function setRunning(value) {
   elements.refreshHealth.disabled = value;
   elements.cancel.classList.toggle("hidden", !value);
   document.querySelectorAll("[data-workspace-action]").forEach((button) => {
+    button.disabled = value;
+  });
+  document.querySelectorAll("[data-history-id]").forEach((button) => {
     button.disabled = value;
   });
 }
@@ -124,6 +129,136 @@ async function refreshWorkspaces() {
   } catch (error) {
     elements.workspacePanel.classList.remove("hidden");
     elements.workspaceStatus.textContent = error.message;
+  }
+}
+
+function renderHistory({ corruptCount = 0, items = [] }) {
+  elements.historyList.replaceChildren();
+  if (items.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "history-empty";
+    empty.textContent = "Completed and failed run receipts will appear here.";
+    elements.historyList.append(empty);
+  }
+  for (const receipt of items.slice(0, 8)) {
+    const item = document.createElement("li");
+    item.className = "history-item";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `${receipt.project} · ${receipt.status}`;
+    const task = document.createElement("p");
+    task.textContent = receipt.task;
+    copy.append(title, task);
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    const time = document.createElement("time");
+    time.dateTime = receipt.endedAt || receipt.startedAt;
+    time.textContent = new Date(time.dateTime).toLocaleString([], {
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "short"
+    });
+    const result = document.createElement("span");
+    result.textContent = receipt.reason.replaceAll("_", " ");
+    const view = document.createElement("button");
+    view.className = "history-view";
+    view.dataset.historyId = receipt.id;
+    view.disabled = running;
+    view.textContent = "View receipt";
+    view.type = "button";
+    meta.append(time, result, view);
+    item.append(copy, meta);
+    elements.historyList.append(item);
+  }
+  elements.historyStatus.textContent = corruptCount
+    ? `${corruptCount} unreadable local receipt${corruptCount === 1 ? " was" : "s were"} ignored.`
+    : "";
+}
+
+async function refreshHistory() {
+  try {
+    renderHistory(await window.duet.history());
+  } catch (error) {
+    elements.historyStatus.textContent = error.message;
+  }
+}
+
+function reviewText(review) {
+  const sections = [];
+  if (review.summary) sections.push(review.summary);
+  if (review.blockedReason) sections.push(`Blocked: ${review.blockedReason}`);
+  if (Array.isArray(review.findings) && review.findings.length) {
+    sections.push(review.findings.map((finding) =>
+      `- [${finding.priority}] ${finding.path || "repository"}${finding.line ? `:${finding.line}` : ""} — ${finding.title}\n  Evidence: ${finding.evidence}\n  Minimal fix: ${finding.suggestion}`
+    ).join("\n"));
+  } else if (typeof review.findings === "string" && review.findings) {
+    sections.push(review.findings);
+  }
+  if (Array.isArray(review.checks) && review.checks.length) {
+    sections.push(review.checks.map((check) =>
+      `- ${check.name}: ${check.status}${check.evidence ? ` — ${check.evidence}` : ""}`
+    ).join("\n"));
+  }
+  return sections.join("\n\n") || "No review details recorded.";
+}
+
+async function showHistoryReceipt(id) {
+  if (running) return;
+  elements.historyStatus.textContent = "Loading receipt…";
+  try {
+    const receipt = await window.duet.historyReceipt(id);
+    clearTimeline();
+    const state = receipt.result.status;
+    setRunState(state === "failed" ? "error" : state, `Past run · ${repositoryName(receipt.project.root)}`);
+    elements.roundMetric.textContent = String(receipt.result.round ?? receipt.rounds.length);
+    elements.fileMetric.textContent = String(receipt.result.changedFiles.length);
+    elements.tokenMetric.textContent = "—";
+    addEvent({
+      body: `${receipt.request.task}\nBase: ${receipt.project.baseCommit || "not resolved"}`,
+      time: receipt.startedAt,
+      title: "Run started"
+    });
+    for (const retry of receipt.retries || []) {
+      addEvent({
+        body: `${retry.operation} · ${retry.code} · retry ${retry.attempt + 1}/${retry.maxAttempts}`,
+        time: retry.time,
+        title: "Bounded retry"
+      });
+    }
+    for (const warning of receipt.warnings || []) {
+      addEvent({
+        body: `${warning.message}\nCode: ${warning.code} · Category: ${warning.category}`,
+        time: warning.time,
+        title: "Cleanup warning"
+      });
+    }
+    for (const round of receipt.rounds) {
+      addEvent({
+        agent: "claude",
+        body: reviewText(round.review),
+        title: `Claude review · round ${round.round}`,
+        verdict: round.review.verdict
+      });
+      addEvent({
+        body: round.verification
+          ? `Exit ${round.verification.code}${round.verification.timedOut ? " · timed out" : ""}`
+          : "No explicit command configured.",
+        title: "Verification evidence"
+      });
+    }
+    const error = receipt.result.error;
+    addEvent({
+      body: error
+        ? `${error.message}\nCode: ${error.code} · Category: ${error.category}`
+        : String(receipt.result.detail || receipt.result.reason),
+      time: receipt.endedAt || receipt.startedAt,
+      title: `Run ${receipt.result.status}`
+    });
+    elements.historyStatus.textContent = "Receipt loaded in the run panel.";
+  } catch (error) {
+    elements.historyStatus.textContent = error.message;
   }
 }
 
@@ -314,14 +449,34 @@ window.duet.onEvent((event) => {
     elements.tokenMetric.textContent = `≈${Number(payload.estimatedHandoffTokens).toLocaleString()}`;
   } else if (event.type === "log") {
     appendLog(payload.agent, payload.message);
+  } else if (event.type === "retry") {
+    addEvent({
+      body: `${payload.code} · retry ${payload.attempt + 1}/${payload.maxAttempts} after ${payload.delayMs} ms`,
+      title: "Transient review failure",
+      time: event.time
+    });
+  } else if (event.type === "warning") {
+    addEvent({
+      body: `${payload.message}\nCode: ${payload.code} · Category: ${payload.category}`,
+      title: "Cleanup warning",
+      time: event.time
+    });
   } else if (event.type === "finish") {
     finishRun(payload);
   } else if (event.type === "error") {
     setRunning(false);
     setRunState("error", "Run failed");
     elements.formMessage.textContent = payload.message;
-    addEvent({ body: payload.message, title: "Error", time: event.time });
+    addEvent({
+      body: `${payload.message}\nCode: ${payload.code} · Category: ${payload.category}`,
+      title: "Error",
+      time: event.time
+    });
     refreshWorkspaces();
+  } else if (event.type === "history-saved") {
+    refreshHistory();
+  } else if (event.type === "history-error") {
+    elements.historyStatus.textContent = payload.message;
   } else if (event.type === "recovery-error") {
     elements.workspacePanel.classList.remove("hidden");
     elements.workspaceStatus.textContent = payload.message;
@@ -340,6 +495,10 @@ elements.cancel.addEventListener("click", async () => {
 });
 
 elements.refreshHealth.addEventListener("click", refreshHealth);
+elements.historyList.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-history-id]");
+  if (button) showHistoryReceipt(button.dataset.historyId);
+});
 elements.workspaceList.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-workspace-action]");
   if (button) runWorkspaceAction(button.dataset.workspaceAction, button.dataset.workspaceId);
@@ -372,3 +531,4 @@ elements.form.addEventListener("submit", async (event) => {
 
 refreshHealth();
 refreshWorkspaces();
+refreshHistory();

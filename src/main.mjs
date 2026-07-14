@@ -1,7 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, session } from "electron";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { serializeDuetError } from "./core/errors.mjs";
 import { probeCliHealth } from "./core/health.mjs";
+import {
+  listRunHistory,
+  readRunReceipt,
+  saveRunReceipt
+} from "./core/history.mjs";
 import { runDuet } from "./core/orchestrator.mjs";
 import {
   applyManagedWorkspace,
@@ -46,6 +52,24 @@ function emit(event) {
 
 function workspaceStorageRoot() {
   return join(app.getPath("userData"), "workspaces");
+}
+
+function historyStorageRoot() {
+  return join(app.getPath("userData"), "history");
+}
+
+async function persistReceipt(receipt) {
+  if (!receipt) return;
+  try {
+    await saveRunReceipt(historyStorageRoot(), receipt);
+    emit({ payload: { id: receipt.id }, time: Date.now(), type: "history-saved" });
+  } catch (error) {
+    emit({
+      payload: { message: `Could not save run history: ${error.message}` },
+      time: Date.now(),
+      type: "history-error"
+    });
+  }
 }
 
 async function mutateWorkspace(operation) {
@@ -106,6 +130,8 @@ async function createWindow() {
 }
 
 handle("duet:health", () => probeCliHealth());
+handle("duet:history", () => listRunHistory(historyStorageRoot()));
+handle("duet:history-read", (id) => readRunReceipt(historyStorageRoot(), id));
 handle("duet:select-project", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory"]
@@ -121,10 +147,18 @@ handle("duet:start", async (config) => {
     signal: currentAbort.signal,
     workspaceRoot: workspaceStorageRoot()
   })
-    .then((result) => emit({ payload: result, time: Date.now(), type: "finish" }))
-    .catch((error) =>
-      emit({ payload: { message: error.message }, time: Date.now(), type: "error" })
-    )
+    .then(async (result) => {
+      await persistReceipt(result.receipt);
+      emit({ payload: result, time: Date.now(), type: "finish" });
+    })
+    .catch(async (error) => {
+      await persistReceipt(error.receipt);
+      emit({
+        payload: serializeDuetError(error),
+        time: Date.now(),
+        type: "error"
+      });
+    })
     .finally(() => {
       currentRun = null;
       currentAbort = null;
