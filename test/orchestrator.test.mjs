@@ -30,8 +30,8 @@ function createHarness({
   callError,
   connectError,
   health = {
-    claude: { path: "/bin/claude", subscription: true },
-    codex: { path: "/bin/codex", subscription: true }
+    claude: { compatible: true, path: "/bin/claude", subscription: true },
+    codex: { compatible: true, path: "/bin/codex", subscription: true }
   },
   missingThreadId = false,
   reviewError,
@@ -289,11 +289,29 @@ test("closes Codex when Claude review fails", async () => {
 test("fails preflight before starting Codex when a subscription session is missing", async () => {
   const harness = createHarness({
     health: {
-      claude: { path: "/bin/claude", subscription: false },
-      codex: { path: "/bin/codex", subscription: true }
+      claude: { compatible: true, path: "/bin/claude", subscription: false },
+      codex: { compatible: true, path: "/bin/codex", subscription: true }
     }
   });
   await assert.rejects(runDuet(config(), harness), /Claude Code must be installed/);
+  assert.equal(harness.codex.calls.length, 0);
+  assert.equal(harness.codex.closed, false);
+  assert.equal(harness.deadlineDisposed, true);
+});
+
+test("fails preflight when an authenticated CLI lacks required capabilities", async () => {
+  const harness = createHarness({
+    health: {
+      claude: {
+        compatibilityError: "Claude update required",
+        compatible: false,
+        path: "/bin/claude",
+        subscription: true
+      },
+      codex: { compatible: true, path: "/bin/codex", subscription: true }
+    }
+  });
+  await assert.rejects(runDuet(config(), harness), /Claude update required/);
   assert.equal(harness.codex.calls.length, 0);
   assert.equal(harness.codex.closed, false);
   assert.equal(harness.deadlineDisposed, true);

@@ -108,6 +108,18 @@ export async function runDuet(
     if (!health.claude.subscription) {
       throw new Error("Claude Code must be installed and logged in using Claude.ai.");
     }
+    if (!health.codex.compatible) {
+      throw new Error(
+        health.codex.compatibilityError ||
+          "Codex must support the local MCP server command. Update Codex and try again."
+      );
+    }
+    if (!health.claude.compatible) {
+      throw new Error(
+        health.claude.compatibilityError ||
+          "Claude Code is missing options required for isolated review. Update it and try again."
+      );
+    }
 
     const root = await dependencies.repositoryRoot(config.projectPath);
     const [baseCommit, initial] = await Promise.all([

@@ -43,12 +43,19 @@ function setHealth(agent, data) {
   const card = elements[`${agent}Card`];
   const detail = elements[`${agent}Detail`];
   const pill = elements[`${agent}Pill`];
-  card.classList.toggle("ready", data.subscription);
-  pill.className = `pill ${data.subscription ? "good" : "bad"}`;
-  pill.textContent = data.subscription ? "Subscription ready" : "Needs login";
+  const ready = data.subscription && data.compatible;
+  card.classList.toggle("ready", ready);
+  pill.className = `pill ${ready ? "good" : "bad"}`;
+  pill.textContent = ready
+    ? "Ready"
+    : data.subscription && !data.compatible
+      ? "Update required"
+      : "Needs login";
 
   if (!data.installed) {
     detail.textContent = "CLI not found on this computer.";
+  } else if (!data.compatible) {
+    detail.textContent = data.compatibilityError || "Installed CLI is not compatible with Duet.";
   } else if (data.subscription) {
     const plan = data.subscriptionType ? ` · ${data.subscriptionType}` : "";
     detail.textContent = `${data.version || "Installed"}${plan} · local cached login`;
@@ -64,10 +71,17 @@ async function refreshHealth() {
     const health = await window.duet.health();
     setHealth("codex", health.codex);
     setHealth("claude", health.claude);
-    const ready = health.codex.subscription && health.claude.subscription;
+    const ready =
+      health.codex.subscription &&
+      health.codex.compatible &&
+      health.claude.subscription &&
+      health.claude.compatible;
+    const signedIn = health.codex.subscription && health.claude.subscription;
     elements.formMessage.textContent = ready
       ? "Both subscription sessions are ready."
-      : "Sign in with both official CLIs before starting.";
+      : signedIn
+        ? "Update the incompatible CLI before starting."
+        : "Sign in with both official CLIs before starting.";
   } catch (error) {
     elements.formMessage.textContent = error.message;
   } finally {
