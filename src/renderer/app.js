@@ -122,6 +122,7 @@ function appendLog(agent, message) {
 function finishRun(payload) {
   setRunning(false);
   const state = payload.status === "completed" ? "completed" : payload.status === "blocked" ? "blocked" : "stopped";
+  const reason = String(payload.reason || "unknown_reason");
   const titles = {
     completed: "Review passed",
     blocked: "Needs your decision",
@@ -131,9 +132,9 @@ function finishRun(payload) {
   elements.fileMetric.textContent = String(payload.changedFiles?.length ?? 0);
   elements.formMessage.textContent = payload.status === "completed"
     ? "The requested checks and independent review passed."
-    : `Stopped: ${String(payload.reason || "unknown reason").replaceAll("_", " ")}`;
+    : `Stopped: ${reason.replaceAll("_", " ")}`;
   addEvent({
-    body: String(payload.reason || "Run ended."),
+    body: String(payload.detail || reason),
     title: titles[state]
   });
 }

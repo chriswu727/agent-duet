@@ -1,6 +1,6 @@
 {
   "name": "agent-duet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A bounded local collaboration app for Codex and Claude Code.",
   "author": "Yichen",
   "private": true,
@@ -20,6 +20,7 @@
     "test": "node --test",
     "check": "node scripts/check.mjs",
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "smoke:live": "node scripts/live-smoke.mjs",
     "pack": "electron-builder --dir --publish never",
     "dist": "electron-builder --publish never"
   },
