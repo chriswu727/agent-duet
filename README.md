@@ -14,7 +14,7 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-29%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-40%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Build from source](#build-from-source)
@@ -62,7 +62,8 @@ flowchart LR
 ```
 
 1. **Preflight** — confirm both CLIs are installed, subscription-backed sessions
-   are active, and the selected Git working tree is clean.
+   are active, required MCP and review-isolation options are available, and the
+   selected Git working tree is clean.
 2. **Implement** — launch the official Codex stdio MCP server with workspace-write
    sandboxing and no interactive approvals.
 3. **Verify** — run the command you supplied, such as `pnpm test`.
@@ -125,7 +126,7 @@ quotas and not a statement about your remaining subscription capacity.
 | **Progress detection** | Duet hashes tracked diffs and untracked contents; an unchanged revision stops the loop. |
 | **Bounded output** | Agent output and cross-agent findings are capped before display or handoff. |
 | **Versioned receipt** | Receipt v1 records the base commit, diff hashes, verdicts, check outcomes, and stable stop reason without storing agent transcripts. |
-| **Process cleanup** | Cancel and timeout terminate child process groups, with a forced cleanup fallback. |
+| **Process cleanup** | Cancel and timeout terminate Unix process groups or Windows process trees, with a forced cleanup fallback. |
 | **Desktop hardening** | Electron uses context isolation, renderer sandboxing, a narrow preload bridge, CSP, denied permissions, and blocked navigation. |
 
 Duet is designed for **personal, local use**. It is not a hosted credential proxy,
@@ -159,8 +160,10 @@ pnpm check
 pnpm test
 ```
 
-These checks never call either model. A real end-to-end smoke is intentionally
-separate and refuses to start unless both consent values are present:
+These checks never call either model. They use fake Codex, Claude, and MCP
+executables to exercise stdio, Windows command shims, CLI capability detection,
+verification shells, and process-tree cleanup. A real end-to-end smoke is
+intentionally separate and refuses to start unless both consent values are present:
 
 ```bash
 DUET_LIVE_SMOKE=1 \
@@ -192,6 +195,7 @@ agent-duet/
 ├── src/core/
 │   ├── orchestrator.mjs    # finite Codex → verify → Claude → revise state machine
 │   ├── mcp.mjs             # stdio MCP client for Codex
+│   ├── stdio-transport.mjs # cross-platform MCP lifecycle and process-tree cleanup
 │   ├── claude.mjs          # isolated subscription-backed Claude reviewer
 │   ├── git.mjs             # clean-tree gate and progress snapshots
 │   ├── prompts.mjs         # lean implementation and fail-closed review contract
@@ -203,9 +207,11 @@ agent-duet/
 
 ## Verification status
 
-- 29 offline tests cover configuration ceilings, environment scrubbing, Claude
-  isolation, reviewer parsing, untracked-file progress hashing, Receipt v1, and
-  the complete orchestrator state machine including cleanup failures.
+- 40 offline tests cover configuration ceilings, environment scrubbing, CLI
+  discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
+  verification shells, process-tree cleanup, Claude isolation, reviewer parsing,
+  untracked-file progress hashing, Receipt v1, and the complete orchestrator
+  state machine including cleanup failures.
 - The guarded live smoke exists for explicit manual use and was not run while
   developing this release, so no subscription usage is claimed here.
 - The current v0.1.1 source packages successfully as a macOS arm64 `.app`.

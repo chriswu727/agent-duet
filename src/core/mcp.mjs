@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { subscriptionEnvironment } from "./process.mjs";
+import { DuetStdioClientTransport } from "./stdio-transport.mjs";
 
 export class McpSession {
   constructor({ args, command, cwd, name, onLog }) {
@@ -9,7 +9,7 @@ export class McpSession {
       { name: `duet-${name}`, version: "0.1.1" },
       { capabilities: {} }
     );
-    this.transport = new StdioClientTransport({
+    this.transport = new DuetStdioClientTransport({
       args,
       command,
       cwd,
