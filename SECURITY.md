@@ -21,5 +21,15 @@ secrets in the report.
 Duet launches the official Codex and Claude Code binaries already authenticated on
 the local machine. It does not implement provider login, read cached credentials,
 or forward those credentials to a Duet service. API-key environment variables are
-removed from spawned agent processes, but the selected repository and its content
-remain untrusted input to both coding tools.
+removed from spawned agent processes. Verification runs in an ephemeral home with
+agent, provider, proxy, and Node injection variables removed, but it still has the
+local user's operating-system permissions and is not a security sandbox. Treat a
+repository's code and its verification commands as untrusted until reviewed.
+
+The packaged desktop app enables ASAR integrity and restrictive Electron fuses,
+accepts IPC only from the exact top-level `duet://app` renderer, denies Chromium
+permissions, and blocks navigation and new windows. These controls reduce the
+impact of renderer compromise; they do not make arbitrary local commands safe.
+
+See [PRIVACY.md](./PRIVACY.md) for stored data, retention, deletion,
+child-process, and network boundaries.

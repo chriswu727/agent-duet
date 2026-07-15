@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("duet", {
   finalizeWorkspace: (id) => ipcRenderer.invoke("duet:workspace-finalize", id),
   health: () => ipcRenderer.invoke("duet:health"),
   history: () => ipcRenderer.invoke("duet:history"),
+  clearHistory: () => ipcRenderer.invoke("duet:history-clear"),
+  deleteHistoryReceipt: (id) => ipcRenderer.invoke("duet:history-delete", id),
   historyReceipt: (id) => ipcRenderer.invoke("duet:history-read", id),
   onEvent: (callback) => {
     const handler = (_event, value) => callback(value);

@@ -3,8 +3,9 @@ import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 
-export const SETTINGS_SCHEMA_VERSION = 1;
+export const SETTINGS_SCHEMA_VERSION = 2;
 export const DEFAULT_SETTINGS = Object.freeze({
+  historyRetention: 100,
   maxMinutes: 60,
   maxRounds: 3,
   onboardingComplete: false,
@@ -14,7 +15,19 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 const minuteValues = [10, 30, 60, 90, 120];
+const historyRetentionValues = [0, 10, 25, 50, 100];
+const settingsV1Schema = z.object({
+  maxMinutes: z.number().int().refine((value) => minuteValues.includes(value)),
+  maxRounds: z.number().int().min(1).max(6),
+  onboardingComplete: z.boolean(),
+  reviewModel: z.enum(["sonnet", "opus", "haiku"]),
+  schemaVersion: z.literal(1),
+  verificationCommand: z.string().max(2_000)
+}).strict();
 const settingsSchema = z.object({
+  historyRetention: z.number().int().refine((value) =>
+    historyRetentionValues.includes(value)
+  ),
   maxMinutes: z.number().int().refine((value) => minuteValues.includes(value)),
   maxRounds: z.number().int().min(1).max(6),
   onboardingComplete: z.boolean(),
@@ -24,6 +37,9 @@ const settingsSchema = z.object({
 }).strict();
 
 const patchSchema = z.object({
+  historyRetention: z.coerce.number().int().refine((value) =>
+    historyRetentionValues.includes(value)
+  ).optional(),
   maxMinutes: z.coerce.number().int().refine((value) => minuteValues.includes(value)).optional(),
   maxRounds: z.coerce.number().int().min(1).max(6).optional(),
   onboardingComplete: z.boolean().optional(),
@@ -58,8 +74,22 @@ async function persist(root, settings) {
 export async function loadSettings(root, options = {}) {
   const target = pathFor(root);
   try {
-    const settings = settingsSchema.parse(JSON.parse(await readFile(target, "utf8")));
-    return { settings, warning: null };
+    const value = JSON.parse(await readFile(target, "utf8"));
+    const current = settingsSchema.safeParse(value);
+    if (current.success) return { settings: current.data, warning: null };
+    const previous = settingsV1Schema.safeParse(value);
+    if (previous.success) {
+      const settings = await persist(root, {
+        ...previous.data,
+        historyRetention: DEFAULT_SETTINGS.historyRetention,
+        schemaVersion: SETTINGS_SCHEMA_VERSION
+      });
+      return {
+        settings,
+        warning: "Duet upgraded local settings to the latest format."
+      };
+    }
+    throw current.error;
   } catch (error) {
     if (error.code === "ENOENT") {
       return { settings: { ...DEFAULT_SETTINGS }, warning: null };

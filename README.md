@@ -14,10 +14,10 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-72%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-80%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-[Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Build from source](#build-from-source)
+[Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Privacy](./PRIVACY.md) · [Build from source](#build-from-source)
 
 </div>
 
@@ -70,7 +70,8 @@ flowchart LR
 2. **Isolate and implement** — create a detached managed Git worktree, then launch
    the official Codex stdio MCP server there with workspace-write sandboxing and
    no interactive approvals. The selected repository stays untouched.
-3. **Verify** — run the command you supplied, such as `pnpm test`.
+3. **Verify** — run the command you supplied, such as `pnpm test`, with an
+   ephemeral home and without agent, provider, proxy, or Node injection values.
 4. **Challenge** — launch a fresh Claude Code reviewer in plan mode with write,
    delegation, web, plugin, and nested MCP capabilities disabled. Claude Code's
    JSON Schema output is validated again inside Duet before any finding reaches
@@ -122,16 +123,19 @@ you trust this repository.
    Duet never copies them into the original repository automatically.
 
 The first-run guide explains these boundaries before any model can be called.
-Use **Settings** to save run defaults; Duet stores the default rounds, time,
-reviewer model, and verification command, but does not remember task text or a
-repository path. Use **Inspect diff** on an isolated workspace before deciding to
-Apply, Discard, or Undo.
+Use **Settings** to save run defaults and choose a local-history limit; Duet
+stores the default rounds, time, reviewer model, verification command, and that
+limit, but does not remember task text or a repository path in settings. Use
+**Inspect diff** on an isolated workspace before deciding to Apply, Discard, or
+Undo.
 
-The 100 most recent completed, stopped, blocked, or failed run receipts are kept
-in Duet's local app-data folder and can be reopened from **Local history**. A
-receipt includes the task, repository path, base commit, structured findings,
-check outcomes, error codes, and stop reason. It does not include either agent's
-transcript or credentials.
+By default, the 100 most recent completed, stopped, blocked, or failed run
+receipts are kept in Duet's local app-data folder and can be reopened from
+**Local history**. A receipt includes the task, repository path, base commit,
+structured findings, check outcomes, error codes, and stop reason. It does not
+include either agent's transcript or credentials. Keep 10–100 receipts, disable
+future history, delete one, or clear all history from the app. See
+[PRIVACY.md](./PRIVACY.md) for every local data category and deletion path.
 
 The default is 3 rounds and 60 minutes. These are per-run safety stops—not token
 quotas and not a statement about your remaining subscription capacity.
@@ -148,6 +152,7 @@ quotas and not a statement about your remaining subscription capacity.
 | **Exact-state Undo** | Undo runs only while the repository fingerprint exactly matches Duet's applied result; newer edits fail closed. |
 | **Crash recovery** | Active and mid-Apply manifests are persisted. Restart recovery applies only an exact content fingerprint and locks mismatches for manual inspection. |
 | **Credential isolation** | Child environments use an allowlist; OpenAI, Anthropic, and other provider API-key variables are omitted. |
+| **Verification isolation** | Verification gets an ephemeral home/cache/config tree and no agent, provider, proxy, or Node injection variables. It still runs with the local user's OS permissions and is not claimed as a security sandbox. |
 | **No nested agent loop** | Codex MCP servers are cleared; Claude plugins, skills, nested MCP, web access, delegation, and write tools are disabled. |
 | **Fail-closed review** | Claude Code produces JSON Schema-constrained output; Duet validates field types and verdict invariants again. Missing, malformed, or contradictory reviews become `BLOCKED`, never PASS. |
 | **Machine check wins** | Claude cannot PASS a non-zero verification result. |
@@ -156,9 +161,9 @@ quotas and not a statement about your remaining subscription capacity.
 | **Bounded retry** | Only an explicitly transient Claude read-only review may retry, once. Codex write calls, timeouts, protocol failures, and permanent failures are never replayed automatically. |
 | **Stable errors** | Failures carry a durable code, category, phase, and retryability flag for diagnosis without exposing child-process causes. |
 | **Private preferences** | Settings are schema-validated, atomically replaced, and stored with private file permissions. Invalid settings are quarantined and safe defaults are restored. |
-| **Versioned history** | Receipt v2 records the base commit, structured findings, diff hashes, check outcomes, retries, errors, and stable stop reason without storing agent transcripts. The newest 100 are written atomically with private local permissions. |
+| **Versioned history** | Receipt v2 records evidence without model transcripts. The configurable newest 10–100 are written atomically with private local permissions; history can also be disabled or deleted in-app. |
 | **Process cleanup** | Cancel and timeout terminate Unix process groups or Windows process trees, with a forced cleanup fallback. |
-| **Desktop hardening** | Electron uses context isolation, renderer sandboxing, a narrow preload bridge, CSP, denied permissions, and blocked navigation. |
+| **Desktop hardening** | Electron uses context isolation, renderer sandboxing, an exact-origin/top-frame IPC gate, a narrow preload bridge, CSP, denied permissions, blocked navigation, ASAR integrity, and explicit production fuses. |
 
 Duet is designed for **personal, local use**. It is not a hosted credential proxy,
 does not implement ChatGPT or Claude.ai OAuth, and should not be turned into a
@@ -189,6 +194,8 @@ Run the offline checks:
 ```bash
 pnpm check
 pnpm test
+pnpm run pack
+pnpm run verify:package-security
 ```
 
 These checks never call either model. They use fake Codex, Claude, and MCP
@@ -210,6 +217,9 @@ Build an installer for the current platform:
 ```bash
 pnpm run dist
 ```
+
+`verify:package-security` reads the packaged binary and fails unless `app.asar`
+exists and all eight supported Electron fuses match the repository policy.
 
 Pushing a `v*` tag runs the release workflow and attaches macOS, Windows, and
 Linux artifacts to a GitHub Release. Local builds are unsigned unless you provide
@@ -234,26 +244,33 @@ agent-duet/
 │   ├── workspace.mjs       # managed worktrees, Apply/Discard, Undo, and recovery
 │   ├── history.mjs         # private atomic receipt storage and retention
 │   ├── settings.mjs        # schema-validated local defaults and recovery
+│   ├── security.mjs        # exact renderer origin and top-frame trust checks
 │   ├── prompts.mjs         # lean implementation and fail-closed review contract
 │   ├── receipt.mjs         # transcript-free, versioned run evidence
-│   └── process.mjs         # credential allowlist and child-process cleanup
+│   ├── process.mjs         # subscription CLI environment and child-process cleanup
+│   └── verify.mjs          # ephemeral verification environment and native shell
 ├── test/                   # offline unit and temporary-Git integration tests
 └── .github/workflows/      # CI and cross-platform release builds
 ```
 
 ## Verification status
 
-- 72 offline tests cover configuration ceilings, environment scrubbing, CLI
+- 80 offline tests cover configuration ceilings, agent and verification
+  environment scrubbing, exact renderer-origin checks, Electron fuse policy, CLI
   discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
   verification shells, process-tree cleanup, isolated-worktree Apply/Discard,
   exact-state Undo, interrupted-Apply recovery, Claude isolation, structured
   reviewer invariants, retry boundaries, untracked-file progress hashing,
-  private receipt history, settings recovery, capped exact-tree diff previews,
+  configurable and deletable private receipt history, settings migration and
+  recovery, capped exact-tree diff previews,
   renderer labelling and injection guards, Receipt v2, and the complete
   orchestrator state machine including classified failures.
 - The guarded live smoke exists for explicit manual use and was not run while
   developing this release, so no subscription usage is claimed here.
-- The current v0.1.1 source packages successfully as a macOS arm64 `.app`.
+- The current v0.1.1 source packages successfully as a macOS arm64 `.app`; its
+  ASAR, all eight configured fuses, ad-hoc signature, hardened startup, settings
+  persistence, onboarding lock, navigation block, and renderer console were
+  verified against the packaged binary.
 - The published v0.1.0 macOS arm64 app was launched and its renderer verified;
   its DMG and ZIP also passed `hdiutil verify` and `unzip -t` locally.
 - Windows, Linux, macOS x64, signing, and notarization rely on GitHub runners or
@@ -273,6 +290,7 @@ agent-duet/
 Issues and focused pull requests are welcome. Please keep the invariant intact:
 one writer, an independent read-only reviewer, and deterministic stopping
 conditions. Security reports should follow [SECURITY.md](./SECURITY.md).
+Local-data behavior is documented in [PRIVACY.md](./PRIVACY.md).
 
 ## License
 

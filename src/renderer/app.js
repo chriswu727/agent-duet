@@ -4,6 +4,7 @@ const elements = {
   claudeCard: document.querySelector("#claude-card"),
   claudeDetail: document.querySelector("#claude-detail"),
   claudePill: document.querySelector("#claude-pill"),
+  clearHistory: document.querySelector("#clear-history"),
   codexCard: document.querySelector("#codex-card"),
   codexDetail: document.querySelector("#codex-detail"),
   codexPill: document.querySelector("#codex-pill"),
@@ -33,6 +34,7 @@ const elements = {
   reviewModel: document.querySelector("#review-model"),
   settingsDialog: document.querySelector("#settings-dialog"),
   settingsForm: document.querySelector("#settings-form"),
+  settingsHistoryRetention: document.querySelector("#settings-history-retention"),
   settingsMaxMinutes: document.querySelector("#settings-max-minutes"),
   settingsMaxRounds: document.querySelector("#settings-max-rounds"),
   settingsReviewModel: document.querySelector("#settings-review-model"),
@@ -51,6 +53,7 @@ const elements = {
 
 let running = false;
 let settings;
+let historyClearable = false;
 
 function setRunning(value) {
   running = value;
@@ -58,6 +61,7 @@ function setRunning(value) {
   elements.chooseProject.disabled = value;
   elements.refreshHealth.disabled = value;
   elements.openSettings.disabled = value;
+  elements.clearHistory.disabled = value || !historyClearable;
   elements.cancel.classList.toggle("hidden", !value);
   elements.form.setAttribute("aria-busy", String(value));
   document.querySelectorAll("[data-workspace-action]").forEach((button) => {
@@ -167,6 +171,7 @@ function applySettings(value) {
   elements.verificationCommand.value = value.verificationCommand;
   elements.settingsMaxMinutes.value = String(value.maxMinutes);
   elements.settingsMaxRounds.value = String(value.maxRounds);
+  elements.settingsHistoryRetention.value = String(value.historyRetention);
   elements.settingsReviewModel.value = value.reviewModel;
   elements.settingsVerification.value = value.verificationCommand;
 }
@@ -217,6 +222,8 @@ async function showWorkspaceDiff(id) {
 
 function renderHistory({ corruptCount = 0, items = [] }) {
   elements.historyList.replaceChildren();
+  historyClearable = items.length > 0 || corruptCount > 0;
+  elements.clearHistory.disabled = running || !historyClearable;
   if (items.length === 0) {
     const empty = document.createElement("li");
     empty.className = "history-empty";
@@ -245,13 +252,26 @@ function renderHistory({ corruptCount = 0, items = [] }) {
     });
     const result = document.createElement("span");
     result.textContent = receipt.reason.replaceAll("_", " ");
+    const actions = document.createElement("span");
+    actions.className = "history-item-actions";
     const view = document.createElement("button");
     view.className = "history-view";
+    view.dataset.historyAction = "view";
     view.dataset.historyId = receipt.id;
     view.disabled = running;
-    view.textContent = "View receipt";
+    view.setAttribute("aria-label", `View receipt for ${receipt.project}`);
+    view.textContent = "View";
     view.type = "button";
-    meta.append(time, result, view);
+    const remove = document.createElement("button");
+    remove.className = "history-view history-delete";
+    remove.dataset.historyAction = "delete";
+    remove.dataset.historyId = receipt.id;
+    remove.disabled = running;
+    remove.setAttribute("aria-label", `Delete receipt for ${receipt.project}`);
+    remove.textContent = "Delete";
+    remove.type = "button";
+    actions.append(view, remove);
+    meta.append(time, result, actions);
     item.append(copy, meta);
     elements.historyList.append(item);
   }
@@ -263,6 +283,30 @@ function renderHistory({ corruptCount = 0, items = [] }) {
 async function refreshHistory() {
   try {
     renderHistory(await window.duet.history());
+  } catch (error) {
+    elements.historyStatus.textContent = error.message;
+  }
+}
+
+async function deleteHistoryReceipt(id) {
+  if (running || !window.confirm("Delete this local run receipt? This cannot be undone.")) return;
+  elements.historyStatus.textContent = "Deleting receipt…";
+  try {
+    await window.duet.deleteHistoryReceipt(id);
+    await refreshHistory();
+  } catch (error) {
+    elements.historyStatus.textContent = error.message;
+  }
+}
+
+async function clearHistory() {
+  if (running || !window.confirm("Delete all local run receipts? This cannot be undone.")) return;
+  elements.clearHistory.disabled = true;
+  elements.historyStatus.textContent = "Clearing local history…";
+  try {
+    await window.duet.clearHistory();
+    await refreshHistory();
+    elements.historyStatus.textContent = "Local run history cleared.";
   } catch (error) {
     elements.historyStatus.textContent = error.message;
   }
@@ -580,9 +624,11 @@ elements.cancel.addEventListener("click", async () => {
 });
 
 elements.refreshHealth.addEventListener("click", refreshHealth);
+elements.clearHistory.addEventListener("click", clearHistory);
 elements.historyList.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-history-id]");
-  if (button) showHistoryReceipt(button.dataset.historyId);
+  const button = event.target.closest("button[data-history-action]");
+  if (button?.dataset.historyAction === "view") showHistoryReceipt(button.dataset.historyId);
+  if (button?.dataset.historyAction === "delete") deleteHistoryReceipt(button.dataset.historyId);
 });
 elements.workspaceList.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-workspace-action]");
@@ -630,6 +676,7 @@ elements.settingsForm.addEventListener("submit", async (event) => {
   elements.settingsStatus.textContent = "Saving…";
   try {
     const saved = await window.duet.updateSettings({
+      historyRetention: elements.settingsHistoryRetention.value,
       maxMinutes: elements.settingsMaxMinutes.value,
       maxRounds: elements.settingsMaxRounds.value,
       reviewModel: elements.settingsReviewModel.value,
@@ -638,6 +685,7 @@ elements.settingsForm.addEventListener("submit", async (event) => {
     applySettings(saved);
     elements.settingsDialog.close();
     elements.formMessage.textContent = "Run defaults saved locally.";
+    await refreshHistory();
   } catch (error) {
     elements.settingsStatus.textContent = error.message;
   }

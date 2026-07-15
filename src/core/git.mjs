@@ -26,9 +26,9 @@ export async function gitSnapshot(cwd, baseRef = "HEAD") {
     baseRef === "HEAD" ? head : (await runGit(cwd, ["rev-parse", baseRef])).trim();
   const [status, stat, names, patch, untrackedOutput] = await Promise.all([
     runGit(cwd, ["status", "--short", "--untracked-files=all"]),
-    runGit(cwd, ["diff", "--stat", baseCommit]),
-    runGit(cwd, ["diff", "--name-only", baseCommit]),
-    runGit(cwd, ["diff", "--binary", "--no-ext-diff", baseCommit], {
+    runGit(cwd, ["diff", "--stat", "--no-ext-diff", "--no-textconv", baseCommit]),
+    runGit(cwd, ["diff", "--name-only", "--no-ext-diff", "--no-textconv", baseCommit]),
+    runGit(cwd, ["diff", "--binary", "--no-ext-diff", "--no-textconv", baseCommit], {
       maxOutputChars: 2_000_000
     }),
     runGit(cwd, ["ls-files", "--others", "--exclude-standard", "-z"], {

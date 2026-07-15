@@ -170,7 +170,10 @@
             <span class="eyebrow">Local history</span>
             <h2 id="history-title">Recent run receipts</h2>
           </div>
-          <span class="local-badge">Transcript-free</span>
+          <div class="history-header-actions">
+            <span class="local-badge">Transcript-free</span>
+            <button class="quiet-button" id="clear-history" type="button">Clear history</button>
+          </div>
         </div>
         <p class="history-copy">Stored only on this computer. Select a run to inspect its verdicts, checks, retries, and stop reason.</p>
         <ol class="history-list" id="history-list"></ol>
@@ -229,10 +232,18 @@
               <option value="sonnet">Sonnet</option><option value="opus">Opus</option><option value="haiku">Haiku</option>
             </select>
           </label>
+          <label for="settings-history-retention">Run history
+            <select id="settings-history-retention" name="historyRetention">
+              <option value="0">Do not save</option><option value="10">Keep 10</option>
+              <option value="25">Keep 25</option><option value="50">Keep 50</option>
+              <option value="100">Keep 100</option>
+            </select>
+          </label>
         </div>
         <label class="dialog-field" for="settings-verification-command">Default verification command <span class="optional">optional</span>
-          <input id="settings-verification-command" name="verificationCommand" placeholder="pnpm test" spellcheck="false">
+          <input aria-describedby="verification-trust-note" id="settings-verification-command" name="verificationCommand" placeholder="pnpm test" spellcheck="false">
         </label>
+        <p class="privacy-note" id="verification-trust-note">Verification runs with your local user permissions, but Duet gives it an empty temporary home and does not pass Codex, Claude, proxy, or provider credentials. Only run commands you trust.</p>
         <div class="modal-actions">
           <button class="quiet-button" id="reset-settings" type="button">Reset defaults</button>
           <p id="settings-status" role="status"></p>

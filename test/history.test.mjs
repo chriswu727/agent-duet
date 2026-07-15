@@ -4,9 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  clearRunHistory,
+  deleteRunReceipt,
   listRunHistory,
   readRunReceipt,
-  saveRunReceipt
+  saveRunReceipt,
+  trimRunHistory
 } from "../src/core/history.mjs";
 import { beginReceipt, finalizeReceipt } from "../src/core/receipt.mjs";
 
@@ -78,4 +81,26 @@ test("prunes local history to the configured bound", async (t) => {
 test("rejects receipt ids that could escape the history root", async (t) => {
   const root = await historyRoot(t);
   await assert.rejects(readRunReceipt(root, "../outside"), /Invalid run receipt id/);
+});
+
+test("deletes one receipt or clears all local history", async (t) => {
+  const root = await historyRoot(t);
+  await saveRunReceipt(root, receipt("run-1"));
+  await saveRunReceipt(root, receipt("run-2"));
+
+  await deleteRunReceipt(root, "run-1");
+  assert.deepEqual((await listRunHistory(root)).items.map((item) => item.id), ["run-2"]);
+
+  await clearRunHistory(root);
+  assert.deepEqual(await listRunHistory(root), { corruptCount: 0, items: [] });
+});
+
+test("supports zero retention and rejects invalid limits", async (t) => {
+  const root = await historyRoot(t);
+  await saveRunReceipt(root, receipt("run-1"));
+  await trimRunHistory(root, 0);
+
+  assert.equal((await listRunHistory(root)).items.length, 0);
+  await assert.rejects(trimRunHistory(root, -1), /Invalid run history/);
+  await assert.rejects(trimRunHistory(root, 101), /Invalid run history/);
 });
