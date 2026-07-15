@@ -1,5 +1,6 @@
 import { access, readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { platform } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import {
   FuseV1Options,
   getCurrentFuseWire
@@ -48,6 +49,12 @@ if (!executable) {
 const resources = resourcesPath(executable);
 const archive = join(resources, "app.asar");
 if (!(await stat(archive)).isFile()) throw new Error(`Missing packaged ASAR: ${archive}`);
+if (platform() === "linux") {
+  const sandbox = await stat(join(dirname(executable), "chrome-sandbox"));
+  if (sandbox.uid !== 0 || (sandbox.mode & 0o4777) !== 0o4755) {
+    throw new Error("Packaged Chromium sandbox must be owned by root with mode 4755.");
+  }
+}
 let updateFeedVerified = false;
 try {
   const updateConfig = parse(await readFile(join(resources, "app-update.yml"), "utf8"));

@@ -52,6 +52,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm electron-builder --dir --${{ matrix.target }} --publish never
+      - name: Configure Linux Chromium sandbox
+        if: matrix.target == 'linux'
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
       - run: pnpm run verify:package-security
       - name: Run packaged UI smoke
         if: matrix.target != 'linux'

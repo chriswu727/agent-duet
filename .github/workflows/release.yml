@@ -65,6 +65,11 @@ jobs:
       - run: pnpm check
       - run: pnpm test
       - run: pnpm electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
+      - name: Configure Linux Chromium sandbox
+        if: matrix.target == 'linux'
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
       - run: pnpm run verify:package-security
         env:
           DUET_REQUIRE_UPDATE_FEED: "1"
