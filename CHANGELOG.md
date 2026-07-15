@@ -15,6 +15,8 @@ Versioning while pre-1.0 minor releases may still change interfaces.
   diagnostics.
 - Manual signed-release updates, packaged UI smoke, checksums, SPDX runtime
   SBOMs, and GitHub attestations.
+- Signed candidate artifacts, external beta guidance, and fail-closed
+  distribution, live-smoke, and beta approval gates before publication.
 - Cross-platform CI, dependency review, OSV, CodeQL, OpenSSF Scorecard, and
   repository governance.
 

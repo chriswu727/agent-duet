@@ -14,12 +14,12 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Security](https://github.com/chriswu727/agent-duet/actions/workflows/security.yml/badge.svg)](https://github.com/chriswu727/agent-duet/security/code-scanning)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/chriswu727/agent-duet/badge)](https://scorecard.dev/viewer/?uri=github.com/chriswu727/agent-duet)
-[![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-95%20offline-brightgreen)](./test)
+[![Release readiness](https://img.shields.io/badge/release-v0.1.1%20RC-orange)](./docs/RELEASE_READINESS.md)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](./docs/COMPATIBILITY.md)
+[![Tests](https://img.shields.io/badge/tests-98%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-[Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Compatibility](./docs/COMPATIBILITY.md) · [Privacy](./PRIVACY.md) · [Build from source](#build-from-source)
+[Build from source](#build-from-source) · [Release readiness](./docs/RELEASE_READINESS.md) · [Historical alpha builds](https://github.com/chriswu727/agent-duet/releases) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Compatibility](./docs/COMPATIBILITY.md) · [Privacy](./PRIVACY.md)
 
 </div>
 
@@ -101,19 +101,21 @@ data-loss protection.
 Duet never asks for either credential. It only checks the login status reported by
 each CLI and launches those binaries locally.
 
-### 2. Download Duet
+### 2. Choose a build path
 
-Get the build for your platform from
-[GitHub Releases](https://github.com/chriswu727/agent-duet/releases/latest).
+The current public `v0.1.0` assets are
+[historical unsigned alpha builds](https://github.com/chriswu727/agent-duet/releases),
+not a supported signed release. For evaluation today, build the current source
+locally. Public `v0.1.1` remains gated on Apple and Windows signing credentials,
+written distribution confirmation, an explicitly consented live subscription
+smoke, and the external package matrix. The exact status is tracked in
+[Release readiness](./docs/RELEASE_READINESS.md); unsigned artifacts are not
+presented as production-ready downloads.
 
-Public macOS builds are unsigned until the project has Apple Developer ID signing
-and notarization configured. If macOS blocks a build, either build it from source
-or review the release checksum and use the system's **Open Anyway** flow only if
-you trust this repository.
-
-Installed builds expose a manual updater in **Settings → App updates**. Duet
-checks the public GitHub Releases channel only when you ask, never downloads in
-the background, and requires separate Download and Restart confirmations.
+Current source and future supported packaged builds expose a manual updater in
+**Settings → App updates**. Duet checks the public GitHub Releases channel only
+when you ask, never downloads in the background, and requires separate Download
+and Restart confirmations.
 
 ### 3. Run one bounded collaboration
 
@@ -186,7 +188,7 @@ move back to MCP when the external agent contract is reliable.
 
 ## Build from source
 
-Requirements: Node.js 22+, pnpm 10+, Git, Codex CLI, and Claude Code.
+Requirements: Node.js 22.12+, pnpm 10, Git, Codex CLI, and Claude Code.
 
 ```bash
 git clone https://github.com/chriswu727/agent-duet.git
@@ -231,14 +233,17 @@ exists and all eight supported Electron fuses match the repository policy.
 checks onboarding, settings persistence, the update bridge, blocked navigation,
 and renderer errors without downloading a browser or calling either model.
 
-Pushing an exact `v<package-version>` tag runs the gated release workflow. It
-requires a notarized universal macOS build and signed Windows build, launches
-every packaged UI, generates a packaged-runtime SPDX SBOM, creates GitHub build
-attestations, and publishes sorted SHA-256 checksums with the macOS, Windows, and
-Linux artifacts. Local builds are unsigned unless you provide platform signing
-credentials; no certificate or secret lives in this repository. Maintainer
-instructions and consumer verification commands are in
-[docs/RELEASING.md](./docs/RELEASING.md).
+The manual **Release** workflow builds a signed, notarized, attested candidate
+for all three platforms without publishing it. Pushing an exact
+`v<package-version>` tag repeats that matrix but fails closed unless the written
+distribution confirmation, exact-version live smoke, external beta, and signing
+gates are all recorded. It launches every packaged UI, generates a
+packaged-runtime SPDX SBOM, creates GitHub build attestations, and publishes
+sorted SHA-256 checksums only after every gate passes. Local builds are unsigned
+unless you provide platform signing credentials; no certificate or secret lives
+in this repository. See [Release readiness](./docs/RELEASE_READINESS.md),
+[Beta testing](./docs/BETA_TESTING.md), and
+[Maintainer release instructions](./docs/RELEASING.md).
 
 ## Project layout
 
@@ -269,7 +274,7 @@ agent-duet/
 
 ## Verification status
 
-- 95 offline tests cover configuration ceilings, agent and verification
+- 98 offline tests cover configuration ceilings, agent and verification
   environment scrubbing, exact renderer-origin checks, Electron fuse policy, CLI
   discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
   verification shells, process-tree cleanup, isolated-worktree Apply/Discard,
@@ -278,8 +283,8 @@ agent-duet/
   configurable and deletable private receipt history, settings migration and
   recovery, capped exact-tree diff previews,
   renderer labelling and injection guards, Receipt v2, update state transitions,
-  release preflight, checksums, and the complete orchestrator state machine
-  including classified failures.
+  candidate/publication separation, release preflight, checksums, and the
+  complete orchestrator state machine including classified failures.
 - The guarded live smoke exists for explicit manual use and was not run while
   developing this release, so no subscription usage is claimed here.
 - The current v0.1.1 source packages successfully as universal `x86_64`/`arm64`
@@ -291,13 +296,16 @@ agent-duet/
   SPDX 2.3 SBOM.
 - The published v0.1.0 macOS arm64 app was launched and its renderer verified;
   its DMG and ZIP also passed `hdiutil verify` and `unzip -t` locally.
-- Windows and Linux packaging, production signing, notarization, GitHub SBOM
-  attestations, and release publishing rely on GitHub runners or platform
-  credentials and are not claimed as locally verified here.
+- Windows and Linux unpacked packages also launch and pass package-security and
+  UI smoke checks on GitHub-hosted runners. Production Apple/Windows signing,
+  notarization, release attestations, real subscription smoke, external install
+  testing, and gated publication have not run because their documented external
+  credentials or approvals are absent.
 
 ## Roadmap
 
-- Signed and notarized macOS releases.
+- Complete the externally gated signed `v0.1.1` beta and publish it only after
+  every release-readiness item passes.
 - A completed-run export suitable for issues and pull requests.
 - Optional Claude-writer / Codex-reviewer role reversal after write isolation is
   independently verified.
@@ -312,7 +320,8 @@ conditions. Security reports should follow [SECURITY.md](./SECURITY.md).
 Local-data behavior is documented in [PRIVACY.md](./PRIVACY.md). See
 [CONTRIBUTING.md](./CONTRIBUTING.md) for the development and verification
 contract, [SUPPORT.md](./SUPPORT.md) for help channels, and
-[CHANGELOG.md](./CHANGELOG.md) for user-visible changes.
+[CHANGELOG.md](./CHANGELOG.md) for user-visible changes. Signed candidate results
+follow [docs/BETA_TESTING.md](./docs/BETA_TESTING.md).
 
 ## License
 

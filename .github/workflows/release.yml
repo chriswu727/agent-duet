@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact v-prefixed package version to build without publishing
+        required: true
+        type: string
+
+run-name: ${{ github.event_name == 'push' && format('Release {0}', github.ref_name) || format('Candidate {0}', inputs.release_tag) }}
 
 permissions:
   contents: read
@@ -39,11 +47,16 @@ jobs:
       APPLE_API_KEY_ID: ${{ matrix.target == 'mac' && secrets.APPLE_API_KEY_ID || '' }}
       CSC_KEY_PASSWORD: ${{ matrix.target == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || matrix.target == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
       CSC_LINK: ${{ matrix.target == 'mac' && secrets.MAC_CSC_LINK || matrix.target == 'win' && secrets.WIN_CSC_LINK || '' }}
+      DUET_BETA_APPROVED_VERSION: ${{ vars.DUET_BETA_APPROVED_VERSION }}
+      DUET_DISTRIBUTION_APPROVAL_REF: ${{ vars.DUET_DISTRIBUTION_APPROVAL_REF }}
+      DUET_LIVE_SMOKE_VERSION: ${{ vars.DUET_LIVE_SMOKE_VERSION }}
+      DUET_RELEASE_MODE: ${{ github.event_name == 'push' && 'publish' || 'candidate' }}
+      DUET_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
-          version: 10
+          version: 10.33.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -123,6 +136,7 @@ jobs:
           name: duet-${{ matrix.target }}-${{ matrix.arch }}
           path: release/public/*
           if-no-files-found: error
+          retention-days: 14
       - name: Upload packaged smoke screenshot on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -131,10 +145,8 @@ jobs:
           path: release/package-smoke-*.png
           if-no-files-found: ignore
 
-  publish:
+  assemble:
     needs: build
-    permissions:
-      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -144,6 +156,24 @@ jobs:
           merge-multiple: true
       - run: node scripts/generate-checksums.mjs artifacts
       - run: node scripts/generate-checksums.mjs artifacts --verify
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: duet-${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: github.event_name == 'push'
+    needs: assemble
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: duet-${{ github.ref_name }}
+          path: artifacts
       - name: Publish immutable release assets
         run: gh release create "$GITHUB_REF_NAME" artifacts/* --generate-notes --verify-tag "$RELEASE_FLAG"
         env:

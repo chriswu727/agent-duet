@@ -14,7 +14,7 @@ reviewer, explicit Apply, and deterministic stopping conditions.
 
 ## Local setup
 
-Install Node.js 22+, pnpm 10+, and Git. The official Codex and Claude Code CLIs
+Install Node.js 22.12+, pnpm 10, and Git. The official Codex and Claude Code CLIs
 are needed only for an explicitly consented live smoke, not for development.
 
 ```bash
@@ -56,3 +56,6 @@ review, OSV, and CodeQL. Merges are squash-only after required checks pass.
 Keep public interfaces, receipt schemas, persisted settings, and error codes
 backward-compatible or include an explicit migration. Update README, privacy,
 security, compatibility, and release documentation whenever their claims change.
+Do not set release approval variables or push a version tag from a contribution;
+the maintainer gates are defined in
+[docs/RELEASE_READINESS.md](./docs/RELEASE_READINESS.md).

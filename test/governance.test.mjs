@@ -28,9 +28,32 @@ test("keeps dependency automation and community health files configured", async 
     "CONTRIBUTING.md",
     "SUPPORT.md",
     ".github/CODEOWNERS",
+    ".github/ISSUE_TEMPLATE/beta_report.yml",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
     ".github/ISSUE_TEMPLATE/feature_request.yml",
     ".github/pull_request_template.md",
-    "docs/COMPATIBILITY.md"
+    "docs/BETA_TESTING.md",
+    "docs/COMPATIBILITY.md",
+    "docs/RELEASE_READINESS.md"
   ].map((path) => access(new URL(path, root))));
+});
+
+test("keeps every structured issue form parseable", async () => {
+  const directory = new URL(".github/ISSUE_TEMPLATE/", root);
+  const names = (await readdir(directory))
+    .filter((name) => name.endsWith(".yml") && name !== "config.yml");
+  for (const name of names) {
+    const form = parse(await readFile(new URL(name, directory), "utf8"));
+    assert.equal(typeof form.name, "string", name);
+    assert.equal(typeof form.description, "string", name);
+    assert.ok(Array.isArray(form.body) && form.body.length > 0, name);
+  }
+});
+
+test("keeps candidate builds separate from tag publication", async () => {
+  const workflow = parse(await readFile(new URL(".github/workflows/release.yml", root), "utf8"));
+  assert.ok(workflow.on.workflow_dispatch);
+  assert.equal(workflow.jobs.publish.if, "github.event_name == 'push'");
+  assert.equal(workflow.jobs.publish.needs, "assemble");
+  assert.equal(workflow.jobs.assemble.needs, "build");
 });

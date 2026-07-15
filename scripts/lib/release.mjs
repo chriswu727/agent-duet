@@ -1,14 +1,28 @@
 const releaseTag = /^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const releaseModes = new Set(["candidate", "publish"]);
+const versionApprovals = [
+  "DUET_BETA_APPROVED_VERSION",
+  "DUET_LIVE_SMOKE_VERSION"
+];
 
 function missing(environment, names) {
   return names.filter((name) => !String(environment[name] || "").trim());
 }
 
-export function validateRelease({ environment = {}, tag, target, version }) {
+export function validateRelease({ environment = {}, mode = "publish", tag, target, version }) {
   const issues = [];
   if (!releaseTag.test(tag || "")) issues.push("Release tag must be valid v-prefixed SemVer.");
   if (tag !== `v${version}`) issues.push(`Tag ${tag || "(missing)"} does not match package version ${version}.`);
   if (!["linux", "mac", "win"].includes(target)) issues.push(`Unsupported release target: ${target}`);
+  if (!releaseModes.has(mode)) issues.push(`Unsupported release mode: ${mode}`);
+  if (mode === "publish") {
+    if (!String(environment.DUET_DISTRIBUTION_APPROVAL_REF || "").trim()) {
+      issues.push("Missing distribution approval record reference: DUET_DISTRIBUTION_APPROVAL_REF.");
+    }
+    for (const name of versionApprovals) {
+      if (environment[name] !== tag) issues.push(`${name} must equal ${tag || "the release tag"}.`);
+    }
+  }
   if (target === "mac") {
     const signing = missing(environment, ["CSC_LINK", "CSC_KEY_PASSWORD"]);
     const notarization = missing(environment, [
