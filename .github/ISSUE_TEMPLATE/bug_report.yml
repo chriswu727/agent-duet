@@ -1,0 +1,67 @@
+name: Bug report
+description: Report reproducible Duet behavior that is incorrect or unsafe.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Duet. Never include credentials, private source, or an agent transcript.
+  - type: input
+    id: version
+    attributes:
+      label: Duet version
+      description: Use the release tag or commit SHA.
+      placeholder: v0.1.0 or 4f22bab
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS Apple silicon
+        - macOS Intel
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: cli_versions
+    attributes:
+      label: Local CLI versions and login type
+      description: Include `codex --version` and `claude --version`. Say ChatGPT/Claude.ai subscription or API login, but never paste a token.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Give the smallest clean-repository sequence that reproduces the problem.
+      placeholder: "1. Open Duet…\n2. Choose…\n3. Observe…"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Paste only relevant error codes, stop reasons, or logs after removing names, paths, source text, and secrets.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: The selected repository was clean before the run.
+          required: true
+        - label: I checked existing issues and the compatibility matrix.
+          required: true
+        - label: This report contains no credentials or private source code.
+          required: true

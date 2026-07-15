@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a bounded improvement that preserves Duet's safety model.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What real workflow is difficult today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the user-visible outcome, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Safety and subscription boundaries
+      description: Explain how the proposal keeps one writer, a read-only reviewer, explicit Apply, bounded rounds, and local subscription sessions.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: This request does not require provider API keys or a hosted credential proxy.
+          required: true
+        - label: I checked existing issues and the roadmap.
+          required: true

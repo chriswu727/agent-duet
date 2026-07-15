@@ -12,12 +12,14 @@ independently reviews the working tree, and only evidenced findings go back for
 revision. One writer, one reviewer, finite rounds.
 
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
+[![Security](https://github.com/chriswu727/agent-duet/actions/workflows/security.yml/badge.svg)](https://github.com/chriswu727/agent-duet/security/code-scanning)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/chriswu727/agent-duet/badge)](https://scorecard.dev/viewer/?uri=github.com/chriswu727/agent-duet)
 [![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-93%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-95%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-[Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Privacy](./PRIVACY.md) · [Build from source](#build-from-source)
+[Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Compatibility](./docs/COMPATIBILITY.md) · [Privacy](./PRIVACY.md) · [Build from source](#build-from-source)
 
 </div>
 
@@ -267,7 +269,7 @@ agent-duet/
 
 ## Verification status
 
-- 93 offline tests cover configuration ceilings, agent and verification
+- 95 offline tests cover configuration ceilings, agent and verification
   environment scrubbing, exact renderer-origin checks, Electron fuse policy, CLI
   discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
   verification shells, process-tree cleanup, isolated-worktree Apply/Discard,
@@ -307,7 +309,10 @@ agent-duet/
 Issues and focused pull requests are welcome. Please keep the invariant intact:
 one writer, an independent read-only reviewer, and deterministic stopping
 conditions. Security reports should follow [SECURITY.md](./SECURITY.md).
-Local-data behavior is documented in [PRIVACY.md](./PRIVACY.md).
+Local-data behavior is documented in [PRIVACY.md](./PRIVACY.md). See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for the development and verification
+contract, [SUPPORT.md](./SUPPORT.md) for help channels, and
+[CHANGELOG.md](./CHANGELOG.md) for user-visible changes.
 
 ## License
 
