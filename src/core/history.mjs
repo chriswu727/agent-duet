@@ -82,7 +82,10 @@ async function receiptFiles(root) {
   }
 }
 
-async function pruneHistory(root, maxItems) {
+export async function trimRunHistory(root, maxItems = HISTORY_RETENTION_LIMIT) {
+  if (!Number.isInteger(maxItems) || maxItems < 0 || maxItems > HISTORY_RETENTION_LIMIT) {
+    throw new Error("Invalid run history retention limit.");
+  }
   const files = await receiptFiles(root);
   const dated = await Promise.all(files.map(async (path) => ({
     modified: (await stat(path)).mtimeMs,
@@ -114,7 +117,7 @@ export async function saveRunReceipt(root, receipt, options = {}) {
     await handle?.close().catch(() => {});
     await rm(temporary, { force: true }).catch(() => {});
   }
-  await pruneHistory(root, options.maxItems || HISTORY_RETENTION_LIMIT);
+  await trimRunHistory(root, options.maxItems ?? HISTORY_RETENTION_LIMIT);
   return summary(parsed);
 }
 
@@ -136,4 +139,14 @@ export async function listRunHistory(root) {
 
 export async function readRunReceipt(root, id) {
   return parseReceiptFile(receiptPath(root, id));
+}
+
+export async function deleteRunReceipt(root, id) {
+  await rm(receiptPath(root, id), { force: true });
+  return { deleted: true };
+}
+
+export async function clearRunHistory(root) {
+  await rm(root, { force: true, recursive: true });
+  return { cleared: true };
 }

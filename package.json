@@ -22,6 +22,7 @@
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
     "smoke:live": "node scripts/live-smoke.mjs",
     "pack": "electron-builder --dir --publish never",
+    "verify:package-security": "node scripts/verify-package-security.mjs",
     "dist": "electron-builder --publish never"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@electron/fuses": "1.8.0",
     "electron": "43.1.1",
     "electron-builder": "26.15.3"
   },
@@ -37,6 +39,17 @@
     "appId": "dev.agentduet.app",
     "productName": "Duet",
     "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "loadBrowserProcessSpecificV8Snapshot": false,
+      "grantFileProtocolExtraPrivileges": false,
+      "resetAdHocDarwinSignature": true
+    },
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -46,6 +59,8 @@
       "package.json",
       "README.md",
       "LICENSE",
+      "PRIVACY.md",
+      "SECURITY.md",
       "THIRD_PARTY_NOTICES.md"
     ],
     "mac": {

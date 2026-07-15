@@ -13,9 +13,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { serializeDuetError } from "./core/errors.mjs";
 import { probeCliHealth } from "./core/health.mjs";
 import {
+  clearRunHistory,
+  deleteRunReceipt,
   listRunHistory,
   readRunReceipt,
-  saveRunReceipt
+  saveRunReceipt,
+  trimRunHistory
 } from "./core/history.mjs";
 import { runDuet } from "./core/orchestrator.mjs";
 import {
@@ -23,6 +26,7 @@ import {
   resetSettings,
   updateSettings
 } from "./core/settings.mjs";
+import { trustedRendererFrame } from "./core/security.mjs";
 import {
   applyManagedWorkspace,
   discardManagedWorkspace,
@@ -51,7 +55,7 @@ protocol.registerSchemesAsPrivileged([
 app.enableSandbox();
 
 function trusted(event) {
-  return event.senderFrame?.url?.startsWith("duet://app/");
+  return trustedRendererFrame(event.senderFrame);
 }
 
 function handle(channel, handler) {
@@ -76,7 +80,11 @@ function historyStorageRoot() {
 async function persistReceipt(receipt) {
   if (!receipt) return;
   try {
-    await saveRunReceipt(historyStorageRoot(), receipt);
+    const { settings } = await loadSettings(app.getPath("userData"));
+    if (settings.historyRetention === 0) return;
+    await saveRunReceipt(historyStorageRoot(), receipt, {
+      maxItems: settings.historyRetention
+    });
     emit({ payload: { id: receipt.id }, time: Date.now(), type: "history-saved" });
   } catch (error) {
     emit({
@@ -103,7 +111,15 @@ async function createWindow() {
   if (!protocolReady) {
     await protocol.handle("duet", (request) => {
       const url = new URL(request.url);
-      const relative = decodeURIComponent(url.pathname).replace(/^\/+/, "") || "index.html";
+      if (url.hostname !== "app" || url.port || url.username || url.password) {
+        return new Response("Not found", { status: 404 });
+      }
+      let relative;
+      try {
+        relative = decodeURIComponent(url.pathname).replace(/^\/+/, "") || "index.html";
+      } catch {
+        return new Response("Bad request", { status: 400 });
+      }
       const path = resolve(rendererRoot, relative);
       if (path !== rendererRoot && !path.startsWith(`${rendererRoot}${sep}`)) {
         return new Response("Not found", { status: 404 });
@@ -116,6 +132,7 @@ async function createWindow() {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false);
   });
+  session.defaultSession.setPermissionCheckHandler(() => false);
   mainWindow = new BrowserWindow({
     backgroundColor: "#0b0d10",
     height: 860,
@@ -131,8 +148,6 @@ async function createWindow() {
     },
     width: 1180
   });
-  mainWindow.webContents.on("will-navigate", (event) => event.preventDefault());
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   await mainWindow.loadURL("duet://app/index.html");
   mainWindow.show();
   if (recoveryError) {
@@ -146,12 +161,16 @@ async function createWindow() {
 
 handle("duet:health", () => probeCliHealth());
 handle("duet:history", () => listRunHistory(historyStorageRoot()));
+handle("duet:history-clear", () => clearRunHistory(historyStorageRoot()));
+handle("duet:history-delete", (id) => deleteRunReceipt(historyStorageRoot(), id));
 handle("duet:history-read", (id) => readRunReceipt(historyStorageRoot(), id));
 handle("duet:settings", () => loadSettings(app.getPath("userData")));
-handle("duet:settings-reset", () => resetSettings(app.getPath("userData")));
-handle("duet:settings-update", (patch) =>
-  updateSettings(app.getPath("userData"), patch)
-);
+handle("duet:settings-reset", async () => resetSettings(app.getPath("userData")));
+handle("duet:settings-update", async (patch) => {
+  const settings = await updateSettings(app.getPath("userData"), patch);
+  await trimRunHistory(historyStorageRoot(), settings.historyRetention);
+  return settings;
+});
 handle("duet:copy-text", (value) => {
   const text = String(value || "").slice(-12_000);
   clipboard.writeText(text);
@@ -229,6 +248,12 @@ if (!hasSingleInstanceLock) {
     mainWindow.focus();
   });
 }
+app.on("web-contents-created", (_event, contents) => {
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+  contents.on("will-navigate", (event) => event.preventDefault());
+  contents.on("will-redirect", (event) => event.preventDefault());
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+});
 app.on("window-all-closed", () => {
   currentAbort?.abort(new Error("Window closed."));
   if (process.platform !== "darwin") app.quit();
