@@ -14,7 +14,7 @@ non-interactive or isolation option is unavailable.
 | Windows | Windows Server 2025 GitHub runner | x64 unpacked app, process-tree cleanup, fuse, settings, navigation, and packaged UI checks |
 | Linux | Ubuntu 24.04 GitHub runner under Xvfb | x64 unpacked app with root-owned `chrome-sandbox` mode 4755, fuse, and packaged UI checks |
 | Git | 2.50.1 locally plus current GitHub runner versions | Temporary-repository Apply/Discard/Undo and recovery integration suite |
-| Build runtime | Node.js 22 and pnpm 10 in CI | Frozen-lockfile install, syntax, offline test, and package matrix |
+| Build runtime | Node.js 22.12+ and pnpm 10 in CI | Frozen-lockfile install, syntax, offline test, and package matrix |
 
 The Windows CI environment is not a claim that every Windows 10/11 hardware and
 policy combination has completed external beta testing. Linux validation covers
