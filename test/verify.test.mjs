@@ -56,7 +56,7 @@ test("scrubs agent, provider, and proxy credentials from verification", () => {
     targetPlatform: "linux"
   });
 
-  assert.equal(environment.HOME, "/tmp/isolation/home");
+  assert.equal(environment.HOME, join("/tmp/isolation", "home"));
   assert.equal(environment.PATH, "/usr/bin");
   for (const key of [
     "ANTHROPIC_API_KEY",
