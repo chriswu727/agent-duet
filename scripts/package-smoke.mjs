@@ -7,7 +7,10 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import spawn from "cross-spawn";
 import { chromium } from "playwright-core";
-import { terminateProcessTree } from "../src/core/process.mjs";
+import {
+  processIsRunning,
+  terminateProcessTree
+} from "../src/core/process.mjs";
 
 export function packageExecutableCandidates(options = {}) {
   const {
@@ -81,6 +84,14 @@ async function waitForDebugger(port, child, output) {
     await new Promise((done) => setTimeout(done, 200));
   }
   throw new Error(`Timed out waiting for packaged Duet.\n${output()}`);
+}
+
+async function waitForExit(child, timeoutMs = 5_000) {
+  if (!processIsRunning(child)) return;
+  await Promise.race([
+    new Promise((done) => child.once("close", done)),
+    new Promise((done) => setTimeout(done, timeoutMs))
+  ]);
 }
 
 async function main() {
@@ -164,7 +175,13 @@ async function main() {
   } finally {
     await browser?.close().catch(() => {});
     terminateProcessTree(child, { force: true });
-    await rm(userData, { force: true, recursive: true });
+    await waitForExit(child);
+    await rm(userData, {
+      force: true,
+      maxRetries: 10,
+      recursive: true,
+      retryDelay: 200
+    });
   }
 }
 
