@@ -14,7 +14,7 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chriswu727/agent-duet?display_name=tag)](https://github.com/chriswu727/agent-duet/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](https://github.com/chriswu727/agent-duet/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-80%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-93%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [Download](https://github.com/chriswu727/agent-duet/releases/latest) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Privacy](./PRIVACY.md) · [Build from source](#build-from-source)
@@ -109,6 +109,10 @@ and notarization configured. If macOS blocks a build, either build it from sourc
 or review the release checksum and use the system's **Open Anyway** flow only if
 you trust this repository.
 
+Installed builds expose a manual updater in **Settings → App updates**. Duet
+checks the public GitHub Releases channel only when you ask, never downloads in
+the background, and requires separate Download and Restart confirmations.
+
 ### 3. Run one bounded collaboration
 
 1. Choose a **clean Git repository**. Duet refuses dirty trees to avoid
@@ -196,6 +200,7 @@ pnpm check
 pnpm test
 pnpm run pack
 pnpm run verify:package-security
+pnpm run smoke:package
 ```
 
 These checks never call either model. They use fake Codex, Claude, and MCP
@@ -220,11 +225,18 @@ pnpm run dist
 
 `verify:package-security` reads the packaged binary and fails unless `app.asar`
 exists and all eight supported Electron fuses match the repository policy.
+`smoke:package` launches that binary through Electron's embedded Chromium and
+checks onboarding, settings persistence, the update bridge, blocked navigation,
+and renderer errors without downloading a browser or calling either model.
 
-Pushing a `v*` tag runs the release workflow and attaches macOS, Windows, and
-Linux artifacts to a GitHub Release. Local builds are unsigned unless you provide
-the platform's signing credentials; no certificates or signing secrets live in
-this repository.
+Pushing an exact `v<package-version>` tag runs the gated release workflow. It
+requires a notarized universal macOS build and signed Windows build, launches
+every packaged UI, generates a packaged-runtime SPDX SBOM, creates GitHub build
+attestations, and publishes sorted SHA-256 checksums with the macOS, Windows, and
+Linux artifacts. Local builds are unsigned unless you provide platform signing
+credentials; no certificate or secret lives in this repository. Maintainer
+instructions and consumer verification commands are in
+[docs/RELEASING.md](./docs/RELEASING.md).
 
 ## Project layout
 
@@ -255,7 +267,7 @@ agent-duet/
 
 ## Verification status
 
-- 80 offline tests cover configuration ceilings, agent and verification
+- 93 offline tests cover configuration ceilings, agent and verification
   environment scrubbing, exact renderer-origin checks, Electron fuse policy, CLI
   discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
   verification shells, process-tree cleanup, isolated-worktree Apply/Discard,
@@ -263,18 +275,23 @@ agent-duet/
   reviewer invariants, retry boundaries, untracked-file progress hashing,
   configurable and deletable private receipt history, settings migration and
   recovery, capped exact-tree diff previews,
-  renderer labelling and injection guards, Receipt v2, and the complete
-  orchestrator state machine including classified failures.
+  renderer labelling and injection guards, Receipt v2, update state transitions,
+  release preflight, checksums, and the complete orchestrator state machine
+  including classified failures.
 - The guarded live smoke exists for explicit manual use and was not run while
   developing this release, so no subscription usage is claimed here.
-- The current v0.1.1 source packages successfully as a macOS arm64 `.app`; its
-  ASAR, all eight configured fuses, ad-hoc signature, hardened startup, settings
-  persistence, onboarding lock, navigation block, and renderer console were
-  verified against the packaged binary.
+- The current v0.1.1 source packages successfully as universal `x86_64`/`arm64`
+  macOS DMG, ZIP, and `.app` artifacts. Their architectures, archives, update
+  feed, ASAR, all eight configured fuses, ad-hoc signature, hardened startup,
+  settings persistence, onboarding lock, navigation block, update bridge, and
+  renderer console were verified locally against freshly packaged output. The
+  extracted packaged runtime also produced and passed validation as a 110-package
+  SPDX 2.3 SBOM.
 - The published v0.1.0 macOS arm64 app was launched and its renderer verified;
   its DMG and ZIP also passed `hdiutil verify` and `unzip -t` locally.
-- Windows, Linux, macOS x64, signing, and notarization rely on GitHub runners or
-  platform credentials and are not claimed as locally verified.
+- Windows and Linux packaging, production signing, notarization, GitHub SBOM
+  attestations, and release publishing rely on GitHub runners or platform
+  credentials and are not claimed as locally verified here.
 
 ## Roadmap
 

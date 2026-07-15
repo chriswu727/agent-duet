@@ -60,6 +60,12 @@ trust.
 Duet never accesses the clipboard until you press a Copy button. Diagnostics can
 contain paths and process output, so inspect them before sharing.
 
+Installed builds contact GitHub's release infrastructure only after you press
+**Check for updates**. Duet does not check on startup or download an update
+automatically. A second explicit action downloads the selected release asset;
+installation requires a third confirmation. The update channel is fixed to the
+public `chriswu727/agent-duet` repository and is not used for analytics.
+
 ## Questions and reports
 
 For a potential vulnerability, follow [SECURITY.md](./SECURITY.md). For other

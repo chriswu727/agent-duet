@@ -31,5 +31,11 @@ accepts IPC only from the exact top-level `duet://app` renderer, denies Chromium
 permissions, and blocks navigation and new windows. These controls reduce the
 impact of renderer compromise; they do not make arbitrary local commands safe.
 
+Official release builds also require platform signing, macOS notarization,
+packaged UI smoke tests, a packaged-runtime SBOM, GitHub build attestations, and
+published SHA-256 checksums. Update checks are user initiated and fixed to this
+repository's signed GitHub Releases channel. See
+[docs/RELEASING.md](./docs/RELEASING.md) for the release and verification gates.
+
 See [PRIVACY.md](./PRIVACY.md) for stored data, retention, deletion,
 child-process, and network boundaries.

@@ -6,27 +6,39 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-latest
             target: mac
-            arch: x64
-          - os: macos-latest
-            target: mac
-            arch: arm64
+            arch: universal
+            installer-glob: |
+              release/public/*.dmg
+              release/public/*.zip
           - os: windows-latest
             target: win
             arch: x64
+            installer-glob: "release/public/*.exe"
           - os: ubuntu-latest
             target: linux
             arch: x64
+            installer-glob: "release/public/*.AppImage"
     runs-on: ${{ matrix.os }}
+    env:
+      APPLE_API_ISSUER: ${{ matrix.target == 'mac' && secrets.APPLE_API_ISSUER || '' }}
+      APPLE_API_KEY_BASE64: ${{ matrix.target == 'mac' && secrets.APPLE_API_KEY_BASE64 || '' }}
+      APPLE_API_KEY_ID: ${{ matrix.target == 'mac' && secrets.APPLE_API_KEY_ID || '' }}
+      CSC_KEY_PASSWORD: ${{ matrix.target == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || matrix.target == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+      CSC_LINK: ${{ matrix.target == 'mac' && secrets.MAC_CSC_LINK || matrix.target == 'win' && secrets.WIN_CSC_LINK || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -37,28 +49,104 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Prepare Apple notarization key
+        if: matrix.target == 'mac'
+        shell: bash
+        env:
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+        run: |
+          if [ -z "$APPLE_API_KEY_BASE64" ]; then
+            echo "::error::APPLE_API_KEY_BASE64 is required for a macOS release."
+            exit 1
+          fi
+          node -e "require('node:fs').writeFileSync(process.env.APPLE_API_KEY_PATH, Buffer.from(process.env.APPLE_API_KEY_BASE64, 'base64'), { mode: 0o600 })"
+          echo "APPLE_API_KEY=$APPLE_API_KEY_PATH" >> "$GITHUB_ENV"
+      - run: node scripts/release-preflight.mjs ${{ matrix.target }}
       - run: pnpm check
       - run: pnpm test
       - run: pnpm electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
+      - name: Configure Linux Chromium sandbox
+        if: matrix.target == 'linux'
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
+      - run: pnpm run verify:package-security
+        env:
+          DUET_REQUIRE_UPDATE_FEED: "1"
+      - name: Verify macOS signing and notarization
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          codesign --verify --deep --strict --verbose=2 release/mac-universal/Duet.app
+          spctl --assess --type execute --verbose=2 release/mac-universal/Duet.app
+          xcrun stapler validate release/mac-universal/Duet.app
+      - name: Verify Windows Authenticode signatures
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem release -Filter *.exe) + @(Get-Item release/win-unpacked/Duet.exe)
+          if ($files.Count -lt 2) { throw "Missing signed Windows executables." }
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne "Valid") { throw "Invalid signature on $($file.Name): $($signature.Status)" }
+          }
+      - name: Run packaged UI smoke
+        if: matrix.target != 'linux'
+        run: pnpm run smoke:package
+      - name: Run packaged UI smoke on Linux
+        if: matrix.target == 'linux'
+        run: xvfb-run -a pnpm run smoke:package
+      - run: pnpm run prepare:sbom
+      - name: Generate packaged runtime SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          artifact-name: duet-${{ matrix.target }}-${{ matrix.arch }}.spdx.json
+          output-file: release/duet-${{ matrix.target }}-${{ matrix.arch }}.spdx.json
+          path: release/sbom-root
+          config: .syft.yaml
+          syft-version: v1.46.0
+          upload-artifact: false
+          upload-release-assets: false
+      - run: node scripts/verify-sbom.mjs release/duet-${{ matrix.target }}-${{ matrix.arch }}.spdx.json
+      - run: node scripts/stage-release-assets.mjs ${{ matrix.target }} ${{ matrix.arch }}
+      - name: Attest release asset provenance
+        uses: actions/attest@v4.1.1
+        with:
+          subject-path: release/public/*
+      - name: Attest packaged runtime SBOM
+        uses: actions/attest@v4.1.1
+        with:
+          sbom-path: release/duet-${{ matrix.target }}-${{ matrix.arch }}.spdx.json
+          subject-path: ${{ matrix.installer-glob }}
       - uses: actions/upload-artifact@v7
         with:
           name: duet-${{ matrix.target }}-${{ matrix.arch }}
-          path: |
-            release/*.dmg
-            release/*.zip
-            release/*.exe
-            release/*.AppImage
+          path: release/public/*
           if-no-files-found: error
+      - name: Upload packaged smoke screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: duet-smoke-failure-${{ matrix.target }}-${{ matrix.arch }}
+          path: release/package-smoke-*.png
+          if-no-files-found: ignore
 
   publish:
     needs: build
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
-      - run: gh release create "$GITHUB_REF_NAME" artifacts/* --generate-notes
+      - run: node scripts/generate-checksums.mjs artifacts
+      - run: node scripts/generate-checksums.mjs artifacts --verify
+      - name: Publish immutable release assets
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --generate-notes --verify-tag "$RELEASE_FLAG"
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_FLAG: ${{ contains(github.ref_name, '-') && '--prerelease' || '--latest' }}

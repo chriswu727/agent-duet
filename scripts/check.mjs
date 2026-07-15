@@ -4,11 +4,17 @@ import { spawnSync } from "node:child_process";
 const coreFiles = (await readdir(new URL("../src/core/", import.meta.url)))
   .filter((file) => file.endsWith(".mjs"))
   .map((file) => `src/core/${file}`);
+const scriptFiles = (await readdir(new URL("../scripts/", import.meta.url), {
+  recursive: true
+}))
+  .filter((file) => file.endsWith(".mjs"))
+  .map((file) => `scripts/${file}`);
 const files = [
   "src/main.mjs",
   "src/preload.cjs",
   "src/renderer/app.js",
-  ...coreFiles
+  ...coreFiles,
+  ...scriptFiles
 ];
 
 for (const file of files) {

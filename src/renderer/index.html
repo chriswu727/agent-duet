@@ -209,7 +209,7 @@
         <div class="modal-header">
           <div>
             <span class="eyebrow">Preferences</span>
-            <h2 id="settings-title">Run defaults</h2>
+            <h2 id="settings-title">Duet settings</h2>
           </div>
           <button class="dialog-close" id="close-settings" type="button" aria-label="Close settings">×</button>
         </div>
@@ -244,6 +244,17 @@
           <input aria-describedby="verification-trust-note" id="settings-verification-command" name="verificationCommand" placeholder="pnpm test" spellcheck="false">
         </label>
         <p class="privacy-note" id="verification-trust-note">Verification runs with your local user permissions, but Duet gives it an empty temporary home and does not pass Codex, Claude, proxy, or provider credentials. Only run commands you trust.</p>
+        <section class="update-settings" aria-labelledby="update-title">
+          <div>
+            <h3 id="update-title">App updates</h3>
+            <p id="update-status" role="status">Reading installed version…</p>
+          </div>
+          <div class="update-actions">
+            <button class="quiet-button" id="check-updates" type="button">Check for updates</button>
+            <button class="quiet-button hidden" id="download-update" type="button">Download update</button>
+            <button class="primary-button hidden" id="install-update" type="button">Restart and install</button>
+          </div>
+        </section>
         <div class="modal-actions">
           <button class="quiet-button" id="reset-settings" type="button">Reset defaults</button>
           <p id="settings-status" role="status"></p>

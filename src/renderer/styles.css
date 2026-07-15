@@ -767,6 +767,41 @@ fieldset legend {
   margin: 0;
 }
 
+.update-settings {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  margin: 16px 0;
+  padding: 12px;
+}
+
+.update-settings h3,
+.update-settings p {
+  margin: 0;
+}
+
+.update-settings h3 {
+  font-size: 11px;
+}
+
+.update-settings p {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+  margin-top: 5px;
+}
+
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .history-empty {
   color: #68717a;
   font-size: 11px;
@@ -983,6 +1018,15 @@ footer {
   .modal-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .update-settings {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .update-actions {
+    justify-content: flex-start;
   }
 }
 

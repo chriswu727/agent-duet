@@ -1,10 +1,15 @@
-import { access, stat } from "node:fs/promises";
-import { arch, platform } from "node:os";
+import { access, readFile, stat } from "node:fs/promises";
+import { platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   FuseV1Options,
   getCurrentFuseWire
 } from "@electron/fuses";
+import { parse } from "yaml";
+import {
+  packageExecutableCandidates,
+  packageResourcesPath
+} from "./package-smoke.mjs";
 
 const expected = new Map([
   [FuseV1Options.RunAsNode, "0"],
@@ -27,32 +32,41 @@ async function firstExisting(paths) {
   return null;
 }
 
-function packageCandidates() {
-  const root = resolve("release");
-  if (platform() === "darwin") {
-    const directory = arch() === "arm64" ? "mac-arm64" : "mac";
-    return [join(root, directory, "Duet.app"), join(root, "mac", "Duet.app")];
-  }
-  if (platform() === "win32") return [join(root, "win-unpacked", "Duet.exe")];
-  return [join(root, "linux-unpacked", "duet")];
-}
-
-function asarPath(executable) {
+function resourcesPath(executable) {
   if (executable.endsWith(".app")) {
-    return join(executable, "Contents", "Resources", "app.asar");
+    return join(executable, "Contents", "Resources");
   }
-  return join(dirname(executable), "resources", "app.asar");
+  return packageResourcesPath(executable);
 }
 
 const executable = process.argv[2]
   ? resolve(process.argv[2])
-  : await firstExisting(packageCandidates());
+  : await firstExisting(packageExecutableCandidates());
 if (!executable) {
   throw new Error("No packaged Duet executable found. Run `pnpm run pack` first or pass its path.");
 }
 
-const archive = asarPath(executable);
+const resources = resourcesPath(executable);
+const archive = join(resources, "app.asar");
 if (!(await stat(archive)).isFile()) throw new Error(`Missing packaged ASAR: ${archive}`);
+if (platform() === "linux") {
+  const sandbox = await stat(join(dirname(executable), "chrome-sandbox"));
+  if (sandbox.uid !== 0 || (sandbox.mode & 0o4777) !== 0o4755) {
+    throw new Error("Packaged Chromium sandbox must be owned by root with mode 4755.");
+  }
+}
+let updateFeedVerified = false;
+try {
+  const updateConfig = parse(await readFile(join(resources, "app-update.yml"), "utf8"));
+  if (
+    updateConfig.provider !== "github"
+    || updateConfig.owner !== "chriswu727"
+    || updateConfig.repo !== "agent-duet"
+  ) throw new Error("Packaged update feed does not match the public Duet repository.");
+  updateFeedVerified = true;
+} catch (error) {
+  if (error.code !== "ENOENT" || process.env.DUET_REQUIRE_UPDATE_FEED === "1") throw error;
+}
 
 const wire = await getCurrentFuseWire(executable);
 const failures = [];
@@ -64,4 +78,4 @@ for (const [option, state] of expected) {
 }
 if (failures.length) throw new Error(`Unsafe Electron fuse state:\n${failures.join("\n")}`);
 
-console.log(`Verified ASAR and ${expected.size} Electron fuses in ${executable}.`);
+console.log(`Verified ASAR and ${expected.size} Electron fuses${updateFeedVerified ? " plus the update feed" : ""} in ${executable}.`);
