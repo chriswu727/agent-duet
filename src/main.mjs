@@ -8,6 +8,7 @@ import {
   protocol,
   session
 } from "electron";
+import electronUpdater from "electron-updater";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { serializeDuetError } from "./core/errors.mjs";
@@ -27,6 +28,7 @@ import {
   updateSettings
 } from "./core/settings.mjs";
 import { trustedRendererFrame } from "./core/security.mjs";
+import { UpdateController } from "./core/updates.mjs";
 import {
   applyManagedWorkspace,
   discardManagedWorkspace,
@@ -44,7 +46,9 @@ let currentAbort;
 let protocolReady = false;
 let recoveryError;
 let workspaceMutation;
+let updateController;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const { autoUpdater } = electronUpdater;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -171,6 +175,15 @@ handle("duet:settings-update", async (patch) => {
   await trimRunHistory(historyStorageRoot(), settings.historyRetention);
   return settings;
 });
+handle("duet:update-status", () => updateController.status());
+handle("duet:update-check", () => updateController.check());
+handle("duet:update-download", () => updateController.download());
+handle("duet:update-install", () => {
+  if (currentRun || workspaceMutation) {
+    throw new Error("Wait for the active Duet operation to finish before restarting.");
+  }
+  return updateController.install();
+});
 handle("duet:copy-text", (value) => {
   const text = String(value || "").slice(-12_000);
   clipboard.writeText(text);
@@ -235,6 +248,12 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.whenReady().then(async () => {
+    updateController = new UpdateController({
+      onState: (state) => emit({ payload: state, time: Date.now(), type: "update" }),
+      packaged: app.isPackaged,
+      updater: autoUpdater,
+      version: app.getVersion()
+    });
     try {
       await recoverManagedWorkspaces(workspaceStorageRoot());
     } catch (error) {

@@ -1,5 +1,6 @@
 const elements = {
   cancel: document.querySelector("#cancel-run"),
+  checkUpdates: document.querySelector("#check-updates"),
   chooseProject: document.querySelector("#choose-project"),
   claudeCard: document.querySelector("#claude-card"),
   claudeDetail: document.querySelector("#claude-detail"),
@@ -15,11 +16,13 @@ const elements = {
   diffNote: document.querySelector("#diff-note"),
   diffPatch: document.querySelector("#diff-patch"),
   diffStat: document.querySelector("#diff-stat"),
+  downloadUpdate: document.querySelector("#download-update"),
   fileMetric: document.querySelector("#file-metric"),
   form: document.querySelector("#run-form"),
   formMessage: document.querySelector("#form-message"),
   historyList: document.querySelector("#history-list"),
   historyStatus: document.querySelector("#history-status"),
+  installUpdate: document.querySelector("#install-update"),
   log: document.querySelector("#log-output"),
   maxMinutes: document.querySelector("#max-minutes"),
   maxRounds: document.querySelector("#max-rounds"),
@@ -45,6 +48,7 @@ const elements = {
   taskCount: document.querySelector("#task-count"),
   timeline: document.querySelector("#timeline"),
   tokenMetric: document.querySelector("#token-metric"),
+  updateStatus: document.querySelector("#update-status"),
   verificationCommand: document.querySelector("#verification-command"),
   workspaceList: document.querySelector("#workspace-queue"),
   workspacePanel: document.querySelector("#workspace-queue-panel"),
@@ -54,6 +58,7 @@ const elements = {
 let running = false;
 let settings;
 let historyClearable = false;
+let updateState;
 
 function setRunning(value) {
   running = value;
@@ -70,6 +75,43 @@ function setRunning(value) {
   document.querySelectorAll("[data-history-id]").forEach((button) => {
     button.disabled = value;
   });
+  if (updateState) renderUpdateStatus(updateState);
+}
+
+function renderUpdateStatus(status) {
+  updateState = status;
+  const version = status.version || status.currentVersion;
+  const messages = {
+    available: `Duet ${version} is available. Downloading requires your approval.`,
+    checking: "Checking the signed GitHub release channel…",
+    current: `Duet ${status.currentVersion} is current.`,
+    downloading: `Downloading Duet ${version}… ${status.percent ?? 0}%`,
+    error: `Update check failed: ${status.message || "Unknown updater error."}`,
+    idle: `Duet ${status.currentVersion}. Updates are checked only when you ask.`,
+    installing: `Installing Duet ${version}…`,
+    ready: `Duet ${version} is downloaded and ready to install.`,
+    unavailable: "Updates are available in installed builds."
+  };
+  elements.updateStatus.textContent = messages[status.state] || "Update status unavailable.";
+  elements.downloadUpdate.classList.toggle("hidden", status.state !== "available");
+  elements.installUpdate.classList.toggle("hidden", status.state !== "ready");
+  const busy = ["checking", "downloading", "installing"].includes(status.state);
+  elements.checkUpdates.disabled = running || busy || status.state === "unavailable";
+  elements.downloadUpdate.disabled = running || status.state !== "available";
+  elements.installUpdate.disabled = running || status.state !== "ready";
+}
+
+async function refreshUpdateStatus() {
+  try {
+    renderUpdateStatus(await window.duet.updateStatus());
+  } catch (error) {
+    renderUpdateStatus({
+      currentVersion: "unknown",
+      message: error.message,
+      state: "error",
+      version: null
+    });
+  }
 }
 
 function repositoryName(path) {
@@ -606,6 +648,8 @@ window.duet.onEvent((event) => {
     refreshHistory();
   } else if (event.type === "history-error") {
     elements.historyStatus.textContent = payload.message;
+  } else if (event.type === "update") {
+    renderUpdateStatus(payload);
   } else if (event.type === "recovery-error") {
     elements.workspacePanel.classList.remove("hidden");
     elements.workspaceStatus.textContent = payload.message;
@@ -625,6 +669,43 @@ elements.cancel.addEventListener("click", async () => {
 
 elements.refreshHealth.addEventListener("click", refreshHealth);
 elements.clearHistory.addEventListener("click", clearHistory);
+elements.checkUpdates.addEventListener("click", async () => {
+  elements.checkUpdates.disabled = true;
+  try {
+    renderUpdateStatus(await window.duet.checkForUpdates());
+  } catch (error) {
+    renderUpdateStatus({
+      currentVersion: updateState?.currentVersion || "unknown",
+      message: error.message,
+      state: "error",
+      version: null
+    });
+  }
+});
+elements.downloadUpdate.addEventListener("click", async () => {
+  if (!window.confirm(`Download Duet ${updateState?.version || "update"}?`)) return;
+  elements.downloadUpdate.disabled = true;
+  try {
+    renderUpdateStatus(await window.duet.downloadUpdate());
+  } catch (error) {
+    renderUpdateStatus({
+      currentVersion: updateState?.currentVersion || "unknown",
+      message: error.message,
+      state: "error",
+      version: null
+    });
+  }
+});
+elements.installUpdate.addEventListener("click", async () => {
+  if (!window.confirm("Restart Duet now and install the downloaded update?")) return;
+  elements.installUpdate.disabled = true;
+  try {
+    await window.duet.installUpdate();
+  } catch (error) {
+    elements.updateStatus.textContent = error.message;
+    elements.installUpdate.disabled = false;
+  }
+});
 elements.historyList.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-history-action]");
   if (button?.dataset.historyAction === "view") showHistoryReceipt(button.dataset.historyId);
@@ -661,6 +742,7 @@ elements.copyDiagnostics.addEventListener("click", async () => {
 
 elements.openSettings.addEventListener("click", async () => {
   if (!settings) await refreshSettings();
+  await refreshUpdateStatus();
   if (!settings || elements.settingsDialog.open) return;
   applySettings(settings);
   elements.settingsStatus.textContent = "";
@@ -762,5 +844,6 @@ Promise.all([
   refreshHealth(),
   refreshHistory(),
   refreshSettings(),
+  refreshUpdateStatus(),
   refreshWorkspaces()
 ]);

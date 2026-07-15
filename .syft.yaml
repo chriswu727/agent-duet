@@ -1,0 +1,3 @@
+check-for-app-update: false
+select-catalogers:
+  - +javascript-package-cataloger

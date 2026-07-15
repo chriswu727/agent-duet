@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld("duet", {
     return () => ipcRenderer.removeListener("duet:event", handler);
   },
   selectProject: () => ipcRenderer.invoke("duet:select-project"),
+  updateStatus: () => ipcRenderer.invoke("duet:update-status"),
+  checkForUpdates: () => ipcRenderer.invoke("duet:update-check"),
+  downloadUpdate: () => ipcRenderer.invoke("duet:update-download"),
+  installUpdate: () => ipcRenderer.invoke("duet:update-install"),
   settings: () => ipcRenderer.invoke("duet:settings"),
   resetSettings: () => ipcRenderer.invoke("duet:settings-reset"),
   updateSettings: (patch) => ipcRenderer.invoke("duet:settings-update", patch),

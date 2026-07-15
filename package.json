@@ -20,6 +20,8 @@
     "test": "node --test",
     "check": "node scripts/check.mjs",
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "smoke:package": "node scripts/package-smoke.mjs",
+    "prepare:sbom": "node scripts/prepare-sbom.mjs",
     "smoke:live": "node scripts/live-smoke.mjs",
     "pack": "electron-builder --dir --publish never",
     "verify:package-security": "node scripts/verify-package-security.mjs",
@@ -28,17 +30,23 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "cross-spawn": "7.0.6",
+    "electron-updater": "6.8.9",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@electron/asar": "4.2.0",
     "@electron/fuses": "1.8.0",
     "electron": "43.1.1",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "playwright-core": "1.61.1",
+    "yaml": "2.9.0"
   },
   "build": {
     "appId": "dev.agentduet.app",
     "productName": "Duet",
     "asar": true,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "electronUpdaterCompatibility": ">=2.16",
     "electronFuses": {
       "runAsNode": false,
       "enableCookieEncryption": true,
@@ -54,6 +62,14 @@
       "output": "release",
       "buildResources": "build"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "chriswu727",
+        "repo": "agent-duet",
+        "releaseType": "release"
+      }
+    ],
     "files": [
       "src/**/*",
       "package.json",
@@ -65,12 +81,15 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "notarize": true,
       "target": [
         "dmg",
         "zip"
       ]
     },
     "win": {
+      "verifyUpdateCodeSignature": true,
       "target": [
         "nsis"
       ]

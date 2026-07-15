@@ -27,3 +27,42 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm test
+
+  package:
+    needs: offline
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: mac
+          - os: windows-latest
+            target: win
+          - os: ubuntu-latest
+            target: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm electron-builder --dir --${{ matrix.target }} --publish never
+      - run: pnpm run verify:package-security
+      - name: Run packaged UI smoke
+        if: matrix.target != 'linux'
+        run: pnpm run smoke:package
+      - name: Run packaged UI smoke on Linux
+        if: matrix.target == 'linux'
+        run: xvfb-run -a pnpm run smoke:package
+      - name: Upload packaged smoke screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: duet-smoke-failure-${{ matrix.target }}
+          path: release/package-smoke-*.png
+          if-no-files-found: ignore
