@@ -57,3 +57,17 @@ test("keeps candidate builds separate from tag publication", async () => {
   assert.equal(workflow.jobs.publish.needs, "assemble");
   assert.equal(workflow.jobs.assemble.needs, "build");
 });
+
+test("keeps source onboarding reproducible and subscription-backed", async () => {
+  const readme = await readFile(new URL("README.md", root), "utf8");
+  for (const required of [
+    "codex login status",
+    "claude auth status --json",
+    "corepack enable",
+    "pnpm install --frozen-lockfile",
+    "does not fall back to API credits",
+    "historical unsigned alpha builds"
+  ]) {
+    assert.ok(readme.includes(required), required);
+  }
+});
