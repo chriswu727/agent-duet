@@ -14,12 +14,12 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Security](https://github.com/chriswu727/agent-duet/actions/workflows/security.yml/badge.svg)](https://github.com/chriswu727/agent-duet/security/code-scanning)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/chriswu727/agent-duet/badge)](https://scorecard.dev/viewer/?uri=github.com/chriswu727/agent-duet)
-[![Release readiness](https://img.shields.io/badge/release-v0.1.1%20RC-orange)](./docs/RELEASE_READINESS.md)
+[![Source ready](https://img.shields.io/badge/source-ready-brightgreen)](#quick-start)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](./docs/COMPATIBILITY.md)
-[![Tests](https://img.shields.io/badge/tests-98%20offline-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/tests-99%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-[Build from source](#build-from-source) · [Release readiness](./docs/RELEASE_READINESS.md) · [Historical alpha builds](https://github.com/chriswu727/agent-duet/releases) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Compatibility](./docs/COMPATIBILITY.md) · [Privacy](./PRIVACY.md)
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Compatibility](./docs/COMPATIBILITY.md) · [Privacy](./PRIVACY.md) · [Binary release status](./docs/RELEASE_READINESS.md)
 
 </div>
 
@@ -30,6 +30,16 @@ revision. One writer, one reviewer, finite rounds.
 <p align="center"><sub>The local app detects the official CLI sessions already on your machine. Handoff estimates describe compact prompt size—not account usage or remaining subscription capacity.</sub></p>
 
 ---
+
+## Current status
+
+| Surface | Status |
+|---|---|
+| **Clone and run from source** | Ready on macOS, Windows, and Linux with Node.js 22.12+ and pnpm 10 |
+| **Authentication** | Existing ChatGPT and Claude.ai subscription sessions through the official local CLIs; no API keys or API-credit fallback |
+| **Automated verification** | 99 offline tests plus packaged UI startup on GitHub-hosted macOS, Windows, and Ubuntu runners |
+| **Signed installers** | Not published yet; existing `v0.1.0` assets are [historical unsigned alpha builds](https://github.com/chriswu727/agent-duet/releases) |
+| **Real subscription smoke** | Guarded and documented, but intentionally not claimed as run without explicit subscription-use consent |
 
 ## Why Duet
 
@@ -92,30 +102,41 @@ data-loss protection.
 
 ## Quick start
 
-### 1. Install and sign in to the official CLIs
+### 1. Install the prerequisites and verify both subscriptions
 
-- [Codex CLI](https://developers.openai.com/codex/cli/) — sign in with ChatGPT.
-- [Claude Code](https://code.claude.com/docs/en/quickstart) — sign in with Claude.ai.
-- Install Git.
+- Node.js 22.12+
+- pnpm 10
+- Git
+- [Codex CLI](https://developers.openai.com/codex/cli/), signed in with ChatGPT
+- [Claude Code](https://code.claude.com/docs/en/quickstart), signed in with Claude.ai
 
-Duet never asks for either credential. It only checks the login status reported by
-each CLI and launches those binaries locally.
+Confirm the same terminal that will start Duet can see both sessions:
 
-### 2. Choose a build path
+```bash
+codex login status
+claude auth status --json
+```
 
-The current public `v0.1.0` assets are
-[historical unsigned alpha builds](https://github.com/chriswu727/agent-duet/releases),
-not a supported signed release. For evaluation today, build the current source
-locally. Public `v0.1.1` remains gated on Apple and Windows signing credentials,
-written distribution confirmation, an explicitly consented live subscription
-smoke, and the external package matrix. The exact status is tracked in
-[Release readiness](./docs/RELEASE_READINESS.md); unsigned artifacts are not
-presented as production-ready downloads.
+Codex must report a ChatGPT-backed login and Claude Code must report
+`"authMethod": "claude.ai"`. API-key and provider-compatible logins are outside
+Duet's supported contract. Duet launches these official sessions locally, never
+asks for either credential, and does not fall back to API credits. Normal
+provider subscription limits still apply.
 
-Current source and future supported packaged builds expose a manual updater in
-**Settings → App updates**. Duet checks the public GitHub Releases channel only
-when you ask, never downloads in the background, and requires separate Download
-and Restart confirmations.
+### 2. Clone and start Duet
+
+```bash
+git clone https://github.com/chriswu727/agent-duet.git
+cd agent-duet
+corepack enable
+pnpm install --frozen-lockfile
+pnpm start
+```
+
+If `corepack` is unavailable, install pnpm 10 with your normal Node.js toolchain
+and confirm `pnpm --version` reports major version 10. `pnpm start` opens the
+Electron app directly from source; it does not install an unsigned system
+package or contact the update channel. Keep the terminal open while Duet runs.
 
 ### 3. Run one bounded collaboration
 
@@ -147,6 +168,49 @@ future history, delete one, or clear all history from the app. See
 
 The default is 3 rounds and 60 minutes. These are per-run safety stops—not token
 quotas and not a statement about your remaining subscription capacity.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Duet cannot find `codex` or `claude` | Run `codex --version` and `claude --version` in the same terminal before `pnpm start`. Restart the terminal after installing a CLI. On Windows, also check `where codex` and `where claude`; on macOS/Linux, use `command -v codex` and `command -v claude`. |
+| A CLI is installed but authentication is rejected | Re-run the two status commands above. Duet accepts the supported ChatGPT and Claude.ai subscription login types, not API-key or third-party provider sessions. |
+| A repository is rejected before the run | Run `git status --short` in that repository. Commit, stash, or deliberately remove every tracked and untracked change before selecting it again. |
+| Claude says PASS but the run does not complete | The verification command failed or the review envelope was invalid. Machine checks always override a model verdict; run the same verification command manually to inspect its output. |
+| Apply or Undo is refused | The original repository changed after Duet captured its exact state. Inspect the pending diff and keep or discard it deliberately; Duet will not force an unsafe overwrite. |
+| Source startup fails after an update | Confirm `node --version` is 22.12 or newer, `pnpm --version` is 10.x, then rerun `pnpm install --frozen-lockfile` and `pnpm start`. |
+
+For supported versions and redacted diagnostic guidance, see
+[Compatibility](./docs/COMPATIBILITY.md) and [Support](./SUPPORT.md). Never post
+credentials, private source, identifying local paths, or raw agent transcripts.
+
+## FAQ
+
+### Does Duet use API credits?
+
+No. Duet supports the official Codex CLI logged in through ChatGPT and Claude
+Code logged in through Claude.ai. Provider API-key variables are stripped from
+agent child processes. Calls still count against the rules and limits of the
+user's own subscriptions.
+
+### Does Duet edit my selected repository immediately?
+
+No. Work happens in a managed isolated Git worktree. The original repository
+changes only after an explicit Apply, and Apply fails closed if the original
+state changed in the meantime.
+
+### Do more rounds mean more subscription capacity?
+
+No. Rounds and minutes are per-run safety ceilings. They neither measure nor
+predict remaining account capacity, and the loop stops early on pass, repeated
+findings, no progress, cancellation, timeout, or a blocked review.
+
+### Is source-ready the same as a signed binary release?
+
+No. Cloning and running the source is the supported evaluation path today.
+Signed and notarized installers remain behind the external gates in
+[Release readiness](./docs/RELEASE_READINESS.md); the historical unsigned alpha
+assets are not presented as production-ready downloads.
 
 ## Safety model
 
@@ -186,18 +250,10 @@ Duet therefore uses Claude Code's official non-interactive local mode for the
 reviewer. The isolation policy is explicit and the adapter is small, so this can
 move back to MCP when the external agent contract is reliable.
 
-## Build from source
+## Development and verification
 
-Requirements: Node.js 22.12+, pnpm 10, Git, Codex CLI, and Claude Code.
-
-```bash
-git clone https://github.com/chriswu727/agent-duet.git
-cd agent-duet
-pnpm install
-pnpm start
-```
-
-Run the offline checks:
+The Quick Start above is sufficient for normal local use. Contributors can run
+the complete offline and package checks from the cloned repository:
 
 ```bash
 pnpm check
@@ -274,7 +330,7 @@ agent-duet/
 
 ## Verification status
 
-- 98 offline tests cover configuration ceilings, agent and verification
+- 99 offline tests cover configuration ceilings, agent and verification
   environment scrubbing, exact renderer-origin checks, Electron fuse policy, CLI
   discovery and compatibility, real fake-CLI/MCP subprocess contracts, native
   verification shells, process-tree cleanup, isolated-worktree Apply/Discard,
