@@ -6,6 +6,10 @@
 
 **Codex builds. Claude challenges. Your subscriptions stay local.**
 
+Duet is a local desktop app that lets Codex implement a coding task while Claude
+Code independently reviews the result, using the subscriptions already signed in
+on your computer.
+
 Duet is a bounded desktop collaboration loop for AI coding tools. Give it one
 concrete task in a Git repository: Codex implements the change, Claude Code
 independently reviews the working tree, and only evidenced findings go back for
