@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   packageExecutableCandidates,
@@ -7,7 +7,7 @@ import {
 } from "../scripts/package-smoke.mjs";
 
 test("resolves packaged executables on every supported platform", () => {
-  const root = "/release";
+  const root = resolve("release-test-root");
   assert.deepEqual(packageExecutableCandidates({
     root,
     targetArch: "arm64",
@@ -27,13 +27,14 @@ test("resolves packaged executables on every supported platform", () => {
 });
 
 test("resolves platform package resource directories", () => {
-  const mac = join("/release", "mac", "Duet.app", "Contents", "MacOS", "Duet");
+  const root = resolve("release-test-root");
+  const mac = join(root, "mac", "Duet.app", "Contents", "MacOS", "Duet");
   assert.equal(
     packageResourcesPath(mac, "darwin"),
-    join("/release", "mac", "Duet.app", "Contents", "Resources")
+    join(root, "mac", "Duet.app", "Contents", "Resources")
   );
   assert.equal(
-    packageResourcesPath(join("/release", "win-unpacked", "Duet.exe"), "win32"),
-    join("/release", "win-unpacked", "resources")
+    packageResourcesPath(join(root, "win-unpacked", "Duet.exe"), "win32"),
+    join(root, "win-unpacked", "resources")
   );
 });
