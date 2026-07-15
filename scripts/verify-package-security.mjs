@@ -1,11 +1,14 @@
 import { access, readFile, stat } from "node:fs/promises";
-import { arch, platform } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import {
   FuseV1Options,
   getCurrentFuseWire
 } from "@electron/fuses";
 import { parse } from "yaml";
+import {
+  packageExecutableCandidates,
+  packageResourcesPath
+} from "./package-smoke.mjs";
 
 const expected = new Map([
   [FuseV1Options.RunAsNode, "0"],
@@ -28,46 +31,26 @@ async function firstExisting(paths) {
   return null;
 }
 
-function packageCandidates() {
-  const root = resolve("release");
-  if (platform() === "darwin") {
-    const directory = arch() === "arm64" ? "mac-arm64" : "mac";
-    return [
-      join(root, "mac-universal", "Duet.app"),
-      join(root, directory, "Duet.app"),
-      join(root, "mac", "Duet.app")
-    ];
-  }
-  if (platform() === "win32") return [join(root, "win-unpacked", "Duet.exe")];
-  return [join(root, "linux-unpacked", "duet")];
-}
-
-function asarPath(executable) {
+function resourcesPath(executable) {
   if (executable.endsWith(".app")) {
-    return join(executable, "Contents", "Resources", "app.asar");
+    return join(executable, "Contents", "Resources");
   }
-  return join(dirname(executable), "resources", "app.asar");
-}
-
-function updateConfigPath(executable) {
-  if (executable.endsWith(".app")) {
-    return join(executable, "Contents", "Resources", "app-update.yml");
-  }
-  return join(dirname(executable), "resources", "app-update.yml");
+  return packageResourcesPath(executable);
 }
 
 const executable = process.argv[2]
   ? resolve(process.argv[2])
-  : await firstExisting(packageCandidates());
+  : await firstExisting(packageExecutableCandidates());
 if (!executable) {
   throw new Error("No packaged Duet executable found. Run `pnpm run pack` first or pass its path.");
 }
 
-const archive = asarPath(executable);
+const resources = resourcesPath(executable);
+const archive = join(resources, "app.asar");
 if (!(await stat(archive)).isFile()) throw new Error(`Missing packaged ASAR: ${archive}`);
 let updateFeedVerified = false;
 try {
-  const updateConfig = parse(await readFile(updateConfigPath(executable), "utf8"));
+  const updateConfig = parse(await readFile(join(resources, "app-update.yml"), "utf8"));
   if (
     updateConfig.provider !== "github"
     || updateConfig.owner !== "chriswu727"
