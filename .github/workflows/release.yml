@@ -53,7 +53,7 @@ jobs:
       DUET_RELEASE_MODE: ${{ github.event_name == 'push' && 'publish' || 'candidate' }}
       DUET_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: 10.33.0
@@ -123,11 +123,11 @@ jobs:
       - run: node scripts/verify-sbom.mjs release/duet-${{ matrix.target }}-${{ matrix.arch }}.spdx.json
       - run: node scripts/stage-release-assets.mjs ${{ matrix.target }} ${{ matrix.arch }}
       - name: Attest release asset provenance
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: release/public/*
       - name: Attest packaged runtime SBOM
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           sbom-path: release/duet-${{ matrix.target }}-${{ matrix.arch }}.spdx.json
           subject-path: ${{ matrix.installer-glob }}
@@ -149,7 +149,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
