@@ -16,12 +16,22 @@ test("pins every third-party workflow action to an immutable commit", async () =
   }
 });
 
-test("keeps dependency automation and community health files configured", async () => {
-  const dependabot = parse(await readFile(new URL(".github/dependabot.yml", root), "utf8"));
-  assert.deepEqual(
-    dependabot.updates.map((entry) => entry["package-ecosystem"]).sort(),
-    ["github-actions", "npm"]
-  );
+test("keeps dependency automation consistent with the documented maintenance policy", async () => {
+  const readme = await readFile(new URL("README.md", root), "utf8");
+  const paused = readme.includes("Development is paused. Automated dependency update PRs are disabled");
+  const config = new URL(".github/dependabot.yml", root);
+  if (paused) {
+    await assert.rejects(access(config), { code: "ENOENT" });
+  } else {
+    const dependabot = parse(await readFile(config, "utf8"));
+    assert.deepEqual(
+      dependabot.updates.map((entry) => entry["package-ecosystem"]).sort(),
+      ["github-actions", "npm"]
+    );
+  }
+});
+
+test("keeps community health files configured", async () => {
   await Promise.all([
     "CHANGELOG.md",
     "CODE_OF_CONDUCT.md",
