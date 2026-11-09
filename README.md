@@ -35,8 +35,9 @@ revision. One writer, one reviewer, finite rounds.
 
 ## Current status
 
-Development is paused. Automated dependency update PRs are disabled; existing CI
-and security scanning remain enabled. Dependencies need manual review before use.
+Development is paused. Automated dependency update PRs are disabled. CI remains active;
+security-scanning workflows are paused and must be explicitly enabled for a review.
+Dependencies need manual review before use.
 
 | Surface | Status |
 |---|---|
