@@ -18,9 +18,7 @@ revision. One writer, one reviewer, finite rounds.
 [![CI](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml)
 [![Security](https://github.com/chriswu727/agent-duet/actions/workflows/security.yml/badge.svg)](https://github.com/chriswu727/agent-duet/security/code-scanning)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/chriswu727/agent-duet/badge)](https://scorecard.dev/viewer/?uri=github.com/chriswu727/agent-duet)
-[![Source ready](https://img.shields.io/badge/source-ready-brightgreen)](#quick-start)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-6f7781)](./docs/COMPATIBILITY.md)
-[![Tests](https://img.shields.io/badge/tests-99%20offline-brightgreen)](./test)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Safety model](#safety-model) · [Compatibility](./docs/COMPATIBILITY.md) · [Privacy](./PRIVACY.md) · [Binary release status](./docs/RELEASE_READINESS.md)
@@ -37,11 +35,14 @@ revision. One writer, one reviewer, finite rounds.
 
 ## Current status
 
+Development is paused. Automated dependency update PRs are disabled; existing CI
+and security scanning remain enabled. Dependencies need manual review before use.
+
 | Surface | Status |
 |---|---|
 | **Clone and run from source** | Ready on macOS, Windows, and Linux with Node.js 22.12+ and pnpm 10 |
 | **Authentication** | Existing ChatGPT and Claude.ai subscription sessions through the official local CLIs; no API keys or API-credit fallback |
-| **Automated verification** | 99 offline tests plus packaged UI startup on GitHub-hosted macOS, Windows, and Ubuntu runners |
+| **Automated verification** | Offline tests and packaged UI startup checks on macOS, Windows, and Ubuntu; see the [CI runs](https://github.com/chriswu727/agent-duet/actions/workflows/ci.yml) for the result at each commit |
 | **Signed installers** | Not published yet; existing `v0.1.0` assets are [historical unsigned alpha builds](https://github.com/chriswu727/agent-duet/releases) |
 | **Real subscription smoke** | Guarded and documented, but intentionally not claimed as run without explicit subscription-use consent |
 
